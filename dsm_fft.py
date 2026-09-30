@@ -1,6 +1,11 @@
 """FFT analysis of a 1-bit delta-sigma ADC stream, raw and after a CIC decimator.
 
-Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order]
+Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
+  --skip S  drop the first S samples (start-up transient), default 0
+  --n N     use N contiguous samples after the skip (default: all, cut to a
+            multiple of OSR so the CIC output is whole)
+  --fin F   expected input frequency [Hz]; checks coherence (M=fin*N/fs integer,
+            gcd(M,N)=1). Coherent example: fs=12 MHz, N=65536, M=11 -> 2014.16015625 Hz
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC matches deci_hspice.mdl: `order` integrators at fs, decimate by R=OSR,
@@ -11,10 +16,19 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-path = sys.argv[1] if len(sys.argv) > 1 else "adc1khz1150927.txt"
-fs = float(sys.argv[2]) if len(sys.argv) > 2 else 12e6
-osr = int(float(sys.argv[3])) if len(sys.argv) > 3 else 256
-order = int(sys.argv[4]) if len(sys.argv) > 4 else 3
+import math
+
+args, opts, it = [], {}, iter(sys.argv[1:])
+for a in it:
+    if a.startswith("--"):
+        opts[a[2:]] = next(it)
+    else:
+        args.append(a)
+path = args[0] if len(args) > 0 else "adc1khz1150927.txt"
+fs = float(args[1]) if len(args) > 1 else 12e6
+osr = int(float(args[2])) if len(args) > 2 else 256
+order = int(args[3]) if len(args) > 3 else 3
+skip = int(float(opts.get("skip", 0)))
 bw = fs / (2 * osr)                       # signal bandwidth
 
 
@@ -68,6 +82,18 @@ def analyze(v, fs, bw, name):
 
 x = np.loadtxt(path)                      # one 0/1 (or -1/+1) value per line
 v = 2 * x - 1 if set(np.unique(x)) <= {0, 1} else x.astype(float)
+
+v = v[skip:]
+n_use = int(float(opts["n"])) if "n" in opts else len(v) // osr * osr
+if n_use > len(v):
+    sys.exit(f"need {n_use} samples after skip={skip}, file has only {len(v)}")
+v = v[:n_use]
+if n_use % osr:
+    print(f"warning: N={n_use} is not a multiple of OSR={osr}")
+if "fin" in opts:
+    M = float(opts["fin"]) * n_use / fs
+    ok = abs(M - round(M)) < 1e-6 and math.gcd(int(round(M)), n_use) == 1
+    print(f"coherence: M = fin*N/fs = {M:.6f} -> {'OK' if ok else 'NOT coherent (M must be an integer coprime to N)'}")
 
 raw = analyze(v, fs, bw, "raw 1-bit")
 y = cic_decimate(v, osr, order)[order + 2:]          # drop CIC start-up transient
