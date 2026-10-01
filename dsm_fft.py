@@ -1,11 +1,16 @@
 """FFT analysis of a 1-bit delta-sigma ADC stream, raw and after a CIC decimator.
 
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
+                                  [--window bh|hann|rect] [--nocic 1]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
   --fin F   expected input frequency [Hz]; checks coherence (M=fin*N/fs integer,
             gcd(M,N)=1). Coherent example: fs=12 MHz, N=65536, M=11 -> 2014.16015625 Hz
+  --window  bh (Blackman-Harris, default, signal = +/-4 bins), hann (+/-2 bins),
+            rect (signal = 1 bin; only for coherent sampling, noise-shaped
+            high-freq noise may leak in-band)
+  --nocic 1 skip the CIC stage (use when the record is short)
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC matches deci_hspice.mdl: `order` integrators at fs, decimate by R=OSR,
@@ -18,6 +23,8 @@ import matplotlib.pyplot as plt
 
 import math
 
+WINDOWS = {"bh": 4, "hann": 2, "rect": 0}         # signal half-width [bins]
+
 args, opts, it = [], {}, iter(sys.argv[1:])
 for a in it:
     if a.startswith("--"):
@@ -29,6 +36,10 @@ fs = float(args[1]) if len(args) > 1 else 12e6
 osr = int(float(args[2])) if len(args) > 2 else 256
 order = int(args[3]) if len(args) > 3 else 3
 skip = int(float(opts.get("skip", 0)))
+window = opts.get("window", "bh")
+if window not in WINDOWS:
+    sys.exit("--window must be bh, hann or rect")
+use_cic = opts.get("nocic", "0") in ("0", "false")
 bw = fs / (2 * osr)                       # signal bandwidth
 
 
@@ -43,13 +54,21 @@ def cic_decimate(x, R, order):
     return y / R ** order
 
 
+def make_window(kind, N):
+    n = np.arange(N)
+    if kind == "hann":
+        return 0.5 - 0.5 * np.cos(2 * np.pi * n / N)
+    if kind == "rect":
+        return np.ones(N)
+    return (0.35875 - 0.48829 * np.cos(2 * np.pi * n / N)
+            + 0.14128 * np.cos(4 * np.pi * n / N) - 0.01168 * np.cos(6 * np.pi * n / N))
+
+
 def analyze(v, fs, bw, name):
     """Return dict of spectrum + metrics. 0 dB = full-scale sine (amplitude 1)."""
     v = v - v.mean()                      # remove DC
     N = len(v)
-    n = np.arange(N)
-    w = (0.35875 - 0.48829 * np.cos(2 * np.pi * n / N)
-         + 0.14128 * np.cos(4 * np.pi * n / N) - 0.01168 * np.cos(6 * np.pi * n / N))
+    w = make_window(window, N)
     P = np.abs(np.fft.rfft(v * w)) ** 2
     P[1:-1] *= 2
     P = P / w.sum() ** 2 / 2
@@ -62,7 +81,7 @@ def analyze(v, fs, bw, name):
     sel = (fz > 3 * df) & (fz < bw)
     fin = fz[sel][np.argmax(Z[sel])]
 
-    hw = 4                                # Blackman-Harris main lobe +/-4 bins
+    hw = WINDOWS[window]
     k0 = int(round(fin / df))
     sig = np.zeros(len(P), bool)
     sig[max(k0 - hw, 0):k0 + hw + 1] = True
@@ -70,9 +89,10 @@ def analyze(v, fs, bw, name):
     mask[2:bwb + 1] = True
     mask &= ~sig
     Ps = P[sig].sum()
+    enbw = N * np.sum(w ** 2) / np.sum(w) ** 2     # window noise bandwidth [bins]
     snr = 10 * np.log10(Ps / P[mask].sum())
-    r = dict(name=name, N=N, fs=fs, f=f, d=10 * np.log10(2 * P + 1e-30), fin=fin,
-             amp=10 * np.log10(2 * Ps), snr=snr, enob=(snr - 1.76) / 6.02,
+    r = dict(name=name, N=N, fs=fs, f=f, d=10 * np.log10(4 * P + 1e-30), fin=fin,
+             amp=10 * np.log10(4 * Ps / enbw), snr=snr, enob=(snr - 1.76) / 6.02,
              sfdr=10 * np.log10(Ps / P[mask].max()), df=df)
     print(f"[{name}] N={N} fs={fs:g} Hz bin={df:.1f} Hz | fin={fin:.1f} Hz "
           f"({r['amp']:.2f} dBFS) SNR={snr:.2f} dB ENOB={r['enob']:.2f} "
@@ -96,25 +116,27 @@ if "fin" in opts:
     print(f"coherence: M = fin*N/fs = {M:.6f} -> {'OK' if ok else 'NOT coherent (M must be an integer coprime to N)'}")
 
 raw = analyze(v, fs, bw, "raw 1-bit")
-y = cic_decimate(v, osr, order)[order + 2:]          # drop CIC start-up transient
-dec = analyze(y, fs / osr, bw, f"CIC{order} /{osr}")
+dec = None
+if use_cic:
+    y = cic_decimate(v, osr, order)[order + 2:]      # drop CIC start-up transient
+    dec = analyze(y, fs / osr, bw, f"CIC{order} /{osr}")
 
-fig, ax = plt.subplots(3, 1, figsize=(9, 11))
-for r, a in ((raw, ax[0]), (dec, ax[1])):
+rs = [raw] + ([dec] if dec else [])
+fig, ax = plt.subplots(len(rs) + 1, 1, figsize=(9, 3.7 * (len(rs) + 1)))
+for r, a in zip(rs, ax):
     a.semilogx(r["f"][1:], r["d"][1:], lw=0.7)
     a.axvline(bw, c="r", ls="--")
     a.set(xlabel="Frequency [Hz]", ylabel="dBFS", ylim=(-140, 0),
           title=f"{r['name']}: fin={r['fin']:.0f} Hz, SNR={r['snr']:.1f} dB, "
-                f"ENOB={r['enob']:.1f}")
+                f"ENOB={r['enob']:.1f}  [{window}]")
     a.grid(True, which="both", alpha=0.3)
-m = raw["f"] <= bw * 1.2
-ax[2].plot(raw["f"][m] / 1e3, raw["d"][m], lw=0.8, label="raw")
-m = dec["f"] <= bw * 1.2
-ax[2].plot(dec["f"][m] / 1e3, dec["d"][m], "o-", ms=3, lw=0.8, label="after CIC")
-ax[2].axvline(bw / 1e3, c="r", ls="--")
-ax[2].set(xlabel="kHz", ylabel="dBFS", ylim=(-140, 0), title="In-band comparison")
-ax[2].legend()
-ax[2].grid(alpha=0.3)
+for r, lab in zip(rs, ("raw", "after CIC")):
+    m = r["f"] <= bw * 1.2
+    ax[-1].plot(r["f"][m] / 1e3, r["d"][m], "o-", ms=3, lw=0.8, label=lab)
+ax[-1].axvline(bw / 1e3, c="r", ls="--")
+ax[-1].set(xlabel="kHz", ylabel="dBFS", ylim=(-140, 0), title="In-band")
+ax[-1].legend()
+ax[-1].grid(alpha=0.3)
 plt.tight_layout()
 plt.savefig("fft_result.png", dpi=110)
 if matplotlib.get_backend().lower() != "agg":
