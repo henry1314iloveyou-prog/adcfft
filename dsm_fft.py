@@ -112,8 +112,27 @@ def analyze(v, fs, bw, name, fin_expect=None):
     return r
 
 
-x = np.loadtxt(path)                      # one 0/1 (or -1/+1) value per line
-v = 2 * x - 1 if set(np.unique(x)) <= {0, 1} else x.astype(float)
+try:
+    x = np.loadtxt(path)                  # one 0/1 (or -1/+1) value per line
+except ValueError:                        # header line (e.g. exported from WaveView)
+    x = np.loadtxt(path, skiprows=1)
+if x.ndim == 2:                           # two columns: time, value
+    t, x = x[:, 0], x[:, 1]
+    dt = np.diff(t)
+    print(f"time column: median step {np.median(dt):.4g} s "
+          f"(expected {1 / fs:.4g} s), min {dt.min():.4g}, max {dt.max():.4g}")
+    if abs(np.median(dt) * fs - 1) > 1e-3 or dt.max() > 1.5 / fs:
+        sys.exit("ERROR: time step is not 1/fs -- the file is not one value per clock "
+                 "(WaveView may have exported only the transitions); resample first")
+levels = np.unique(x)
+runs = np.diff(np.flatnonzero(np.diff(x) != 0), prepend=-1)
+print(f"file: {len(x)} samples, levels {levels[:4]}{'...' if len(levels) > 4 else ''}, "
+      f"fraction of 1s {np.mean(x > x.min() + (x.max() - x.min()) / 2):.3f}, "
+      f"longest run {runs.max() if len(runs) else len(x)}")
+if len(levels) > 2:
+    sys.exit("ERROR: more than two levels -- this is a voltage waveform; "
+             "threshold it (qout > 0.9 V) to 0/1 first")
+v = 2 * x - 1 if set(levels) <= {0, 1} else x.astype(float)
 
 v = v[skip:]
 n_use = int(float(opts["n"])) if "n" in opts else len(v) // osr * osr
