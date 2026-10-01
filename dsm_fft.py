@@ -2,7 +2,7 @@
 
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect] [--nocic 1]
-                                  [--thresh V] [--resample 1]
+                                  [--thresh V] [--resample 1] [--phase P]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -15,6 +15,8 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
   --thresh V    input is an analog voltage column; threshold it at V (e.g. 0.9) to 0/1
   --resample 1  two-column (time, value) input: re-sample at t0 + k/fs by linear
                 interpolation before thresholding (use when the time step is not 1/fs)
+  --phase P     with --resample: sample at P + k/fs [s] (e.g. 62.5e-9 = 10p+0.75*tck);
+                default = the first time point in the file
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC matches deci_hspice.mdl: `order` integrators at fs, decimate by R=OSR,
@@ -123,7 +125,11 @@ except ValueError:                        # header line (e.g. exported from Wave
 if x.ndim == 2:                           # two columns: time, value
     t, x = x[:, 0], x[:, 1]
     if "resample" in opts and opts["resample"] not in ("0", "false"):
-        tn = t[0] + np.arange(int((t[-1] - t[0]) * fs) + 1) / fs
+        p0 = float(opts["phase"]) if "phase" in opts else t[0]
+        k0 = int(np.ceil((t[0] - p0) * fs - 1e-9)) if p0 < t[0] else 0
+        tn = p0 + (k0 + np.arange(int((t[-1] - p0) * fs) + 1 - k0)) / fs
+        print(f"sampling instants: first {tn[0]:.4e} s (phase {tn[0] * fs % 1 / fs * 1e9:.2f} ns "
+              f"after a multiple of 1/fs)")
         x = np.interp(tn, t, x)
         t = tn
         print(f"resampled to {len(x)} points at 1/fs")

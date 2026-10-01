@@ -14,6 +14,7 @@ FIN    = 3662.109375       # expected input frequency = M*FS/N, M=5
 WINDOW = "hann"            # hann | bh | rect
 USE_CIC = False            # False: analyse the raw bit stream
 THRESH = None              # e.g. 0.9 if FILE is an analog v(qout) export (time, value)
+PHASE = 62.5e-9            # sampling instant inside each clock period [s] = 10p+0.75*tck
 RESAMPLE = False           # True: re-sample a (time, value) file at 1/FS before thresholding
 # ------------------------------------------
 
@@ -25,5 +26,5 @@ sys.argv = ["dsm_fft.py", FILE, str(FS), str(OSR), "3",
 if THRESH is not None:
     sys.argv += ["--thresh", str(THRESH)]
 if RESAMPLE:
-    sys.argv += ["--resample", "1"]
+    sys.argv += ["--resample", "1", "--phase", str(PHASE)]
 runpy.run_path("dsm_fft.py", run_name="__main__")
