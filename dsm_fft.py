@@ -2,6 +2,7 @@
 
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect] [--nocic 1]
+                                  [--thresh V] [--resample 1]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -11,6 +12,9 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
             rect (signal = 1 bin; only for coherent sampling, noise-shaped
             high-freq noise may leak in-band)
   --nocic 1 skip the CIC stage (use when the record is short)
+  --thresh V    input is an analog voltage column; threshold it at V (e.g. 0.9) to 0/1
+  --resample 1  two-column (time, value) input: re-sample at t0 + k/fs by linear
+                interpolation before thresholding (use when the time step is not 1/fs)
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC matches deci_hspice.mdl: `order` integrators at fs, decimate by R=OSR,
@@ -118,12 +122,19 @@ except ValueError:                        # header line (e.g. exported from Wave
     x = np.loadtxt(path, skiprows=1)
 if x.ndim == 2:                           # two columns: time, value
     t, x = x[:, 0], x[:, 1]
+    if "resample" in opts and opts["resample"] not in ("0", "false"):
+        tn = t[0] + np.arange(int((t[-1] - t[0]) * fs) + 1) / fs
+        x = np.interp(tn, t, x)
+        t = tn
+        print(f"resampled to {len(x)} points at 1/fs")
     dt = np.diff(t)
     print(f"time column: median step {np.median(dt):.4g} s "
           f"(expected {1 / fs:.4g} s), min {dt.min():.4g}, max {dt.max():.4g}")
     if abs(np.median(dt) * fs - 1) > 1e-3 or dt.max() > 1.5 / fs:
         sys.exit("ERROR: time step is not 1/fs -- the file is not one value per clock "
                  "(WaveView may have exported only the transitions); resample first")
+if "thresh" in opts:
+    x = (x > float(opts["thresh"])).astype(float)
 levels = np.unique(x)
 runs = np.diff(np.flatnonzero(np.diff(x) != 0), prepend=-1)
 print(f"file: {len(x)} samples, levels {levels[:4]}{'...' if len(levels) > 4 else ''}, "
