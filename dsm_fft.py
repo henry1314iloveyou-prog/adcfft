@@ -64,7 +64,7 @@ def make_window(kind, N):
             + 0.14128 * np.cos(4 * np.pi * n / N) - 0.01168 * np.cos(6 * np.pi * n / N))
 
 
-def analyze(v, fs, bw, name):
+def analyze(v, fs, bw, name, fin_expect=None):
     """Return dict of spectrum + metrics. 0 dB = full-scale sine (amplitude 1)."""
     v = v - v.mean()                      # remove DC
     N = len(v)
@@ -79,7 +79,19 @@ def analyze(v, fs, bw, name):
     Z = np.abs(np.fft.rfft(v * w, N * 32))          # fine fin estimate
     fz = np.arange(len(Z)) * fs / (N * 32)
     sel = (fz > 3 * df) & (fz < bw)
-    fin = fz[sel][np.argmax(Z[sel])]
+    fin_peak = fz[sel][np.argmax(Z[sel])]             # strongest in-band peak
+    if fin_expect is None:
+        fin = fin_peak
+    else:                                             # lock onto the expected tone
+        near = (fz > fin_expect - 1 * df) & (fz < fin_expect + 1 * df)
+        fin = fz[near][np.argmax(Z[near])]
+        d_near = 20 * np.log10(Z[near].max() / (w.sum() / 2) + 1e-30)
+        d_peak = 20 * np.log10(Z[sel].max() / (w.sum() / 2) + 1e-30)
+        print(f"[{name}] tone near expected {fin_expect:.1f} Hz: {d_near:.1f} dBFS; "
+              f"strongest in-band peak: {fin_peak:.1f} Hz at {d_peak:.1f} dBFS")
+        if d_peak - d_near > 6:
+            print(f"[{name}] WARNING: expected tone is >6 dB below the strongest peak "
+                  f"-- input tone missing or wrong frequency/fs; SNR below is NOT valid")
 
     hw = WINDOWS[window]
     k0 = int(round(fin / df))
@@ -115,11 +127,12 @@ if "fin" in opts:
     ok = abs(M - round(M)) < 1e-6 and math.gcd(int(round(M)), n_use) == 1
     print(f"coherence: M = fin*N/fs = {M:.6f} -> {'OK' if ok else 'NOT coherent (M must be an integer coprime to N)'}")
 
-raw = analyze(v, fs, bw, "raw 1-bit")
+fin_exp = float(opts["fin"]) if "fin" in opts else None
+raw = analyze(v, fs, bw, "raw 1-bit", fin_exp)
 dec = None
 if use_cic:
     y = cic_decimate(v, osr, order)[order + 2:]      # drop CIC start-up transient
-    dec = analyze(y, fs / osr, bw, f"CIC{order} /{osr}")
+    dec = analyze(y, fs / osr, bw, f"CIC{order} /{osr}", fin_exp)
 
 rs = [raw] + ([dec] if dec else [])
 fig, ax = plt.subplots(len(rs) + 1, 1, figsize=(9, 3.7 * (len(rs) + 1)))
