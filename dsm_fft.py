@@ -2,7 +2,7 @@
 
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect] [--nocic 1]
-                                  [--thresh V] [--resample 1] [--phase P]
+                                  [--thresh V] [--resample 1] [--phase P] [--col C]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -17,6 +17,7 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
                 interpolation before thresholding (use when the time step is not 1/fs)
   --phase P     with --resample: sample at P + k/fs [s] (e.g. 62.5e-9 = 10p+0.75*tck);
                 default = the first time point in the file
+  --col C       if the file has more than 2 columns: which column (0-based) is v(qout), default 1
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC matches deci_hspice.mdl: `order` integrators at fs, decimate by R=OSR,
@@ -27,6 +28,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
+import collections
 import math
 
 WINDOWS = {"bh": 4, "hann": 2, "rect": 0}         # signal half-width [bins]
@@ -118,10 +120,35 @@ def analyze(v, fs, bw, name, fin_expect=None):
     return r
 
 
-try:
-    x = np.loadtxt(path)                  # one 0/1 (or -1/+1) value per line
-except ValueError:                        # header line (e.g. exported from WaveView)
-    x = np.loadtxt(path, skiprows=1)
+def load_table(path):
+    """Read numbers from a text/CSV file: any of space, tab, comma, semicolon as
+    separators; lines that are not all-numeric (headers, units) are skipped."""
+    rows, skipped = [], 0
+    with open(path, encoding="utf-8-sig", errors="replace") as fh:
+        for line in fh:
+            parts = line.replace(",", " ").replace(";", " ").split()
+            try:
+                rows.append([float(p) for p in parts])
+            except ValueError:
+                skipped += 1
+                continue
+    rows = [r for r in rows if r]
+    if not rows:
+        sys.exit("ERROR: no numeric data found in " + path)
+    width = collections.Counter(len(r) for r in rows).most_common(1)[0][0]
+    rows = [r for r in rows if len(r) == width]
+    if skipped:
+        print(f"skipped {skipped} non-numeric line(s) (header/units)")
+    a = np.array(rows)
+    return a[:, 0] if width == 1 else a
+
+
+x = load_table(path)                      # one 0/1 per line, or (time, value[, ...]) columns
+if x.ndim == 2 and x.shape[1] > 2:
+    col = int(opts.get("col", 1))
+    print(f"file has {x.shape[1]} columns; using column {col} as the signal "
+          f"(change with --col)")
+    x = x[:, [0, col]]
 if x.ndim == 2:                           # two columns: time, value
     t, x = x[:, 0], x[:, 1]
     if "resample" in opts and opts["resample"] not in ("0", "false"):
