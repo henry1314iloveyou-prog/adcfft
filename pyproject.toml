@@ -1,0 +1,20 @@
+[project]
+name = "adcfft"
+version = "0.1.0"
+description = "Spectral analysis and decimation of 1-bit delta-sigma ADC streams"
+requires-python = ">=3.9"
+dependencies = ["numpy", "scipy"]
+
+[project.optional-dependencies]
+plot = ["matplotlib"]
+dev = ["pytest"]
+
+[project.scripts]
+adcfft = "adcfft.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["adcfft"]
