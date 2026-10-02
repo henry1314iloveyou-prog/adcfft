@@ -218,6 +218,17 @@ if x.ndim == 2:                           # two columns: time, value
                  "(WaveView may have exported only the transitions); resample first")
 if "thresh" in opts:
     x = (x > float(opts["thresh"])).astype(float)
+elif len(np.unique(x)) > 2:
+    # a voltage waveform: accept it only if it is clearly two-level (rails), then
+    # threshold at the mid-point; anything else is probably the wrong file/column
+    lo, hi = np.percentile(x, 1), np.percentile(x, 99)
+    span = hi - lo
+    near = np.mean((np.abs(x - lo) < 0.1 * span) | (np.abs(x - hi) < 0.1 * span))
+    if span >= 0.5 and near >= 0.95:
+        mid = round((lo + hi) / 2, 3)
+        print(f"voltage waveform with two rails ({lo:.3g} V / {hi:.3g} V): "
+              f"thresholding at {mid} V automatically (set THRESH / --thresh to override)")
+        x = (x > mid).astype(float)
 levels = np.unique(x)
 runs = np.diff(np.flatnonzero(np.diff(x) != 0), prepend=-1)
 print(f"file: {len(x)} samples, levels {levels[:4]}{'...' if len(levels) > 4 else ''}, "
