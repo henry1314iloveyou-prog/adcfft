@@ -8,6 +8,7 @@ import sys
 FILE   = "qout_bits.txt"   # one 0/1 per line (qout thresholded at 0.9 V)
 FS     = 12e6              # modulator clock [Hz]
 OSR    = 256
+BW     = None             # signal bandwidth [Hz]; None = FS/(2*OSR) = 23437.5.  e.g. 24300
 SKIP   = 200               # start-up samples to drop (= nskip in the netlist)
 N      = 16384             # contiguous samples to analyse
 FIN    = 3662.109375       # expected input frequency = M*FS/N, M=5
@@ -39,6 +40,8 @@ if FIR_FC is not None:
 if FIR_STOP is not None:
     sys.argv += ["--fir-stop", str(FIR_STOP)]
 sys.argv += ["--col", str(COL)]
+if BW is not None:
+    sys.argv += ["--bw", str(BW)]
 if THRESH is not None:
     sys.argv += ["--thresh", str(THRESH)]
 sys.argv += ["--cursor", "1" if CURSOR else "0"]

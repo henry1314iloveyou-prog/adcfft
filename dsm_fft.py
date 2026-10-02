@@ -3,7 +3,7 @@
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect]
                                   [--cic R] [--cic-order N] [--fir R2] [--fir-fc F] [--fir-stop F] [--fir-atten dB]
-                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1] [--cursor 0]
+                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1] [--cursor 0] [--bw Hz]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -35,6 +35,8 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
   --ignore-time 1  two-column file whose time column is too coarse (few digits) but whose
                 rows are exactly one sample per clock: use the values in order
   --col C       if the file has more than 2 columns: which column (0-based) is v(qout), default 1
+  --bw Hz       signal bandwidth for SNR/ENOB/SFDR; default fs/(2*OSR). Use it when the
+                bandwidth is not exactly fs/(2*OSR), e.g. --bw 24300
   --cursor 0    disable the interactive cursor line (default on when a plot window opens):
                 move the mouse = vertical cursor line + f / dBFS readout (snaps to the
                 data); left click = drop marker M1, M2 (shows delta f / delta dB);
@@ -79,7 +81,8 @@ else:
     cic_R = 0
 order = int(opts.get("cic-order", order))
 fir_R = int(float(opts.get("fir", 0)))
-bw = fs / (2 * osr)                       # signal bandwidth
+bw = float(opts["bw"]) if "bw" in opts else fs / (2 * osr)   # signal bandwidth [Hz]
+print(f"signal bandwidth = {bw:g} Hz" + ("" if "bw" in opts else f"  (fs/(2*OSR), OSR={osr})"))
 
 
 def cic_decimate(x, R, order):
