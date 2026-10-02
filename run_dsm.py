@@ -18,6 +18,7 @@ FIR_R     = 0              # FIR decimation ratio, 0 = FIR off      (e.g. 2)
 FIR_FC    = None           # FIR passband edge [Hz]; None = 0.4 * fs_out of the FIR stage
 FIR_STOP  = None           # FIR stopband edge [Hz]; None = fs_out - fc
 FIR_ATTEN = 70             # FIR stopband attenuation [dB]
+CURSOR = True              # interactive cursor line / markers in the plot window
 DEC_WINDOW = "bh"          # window for the decimated spectrum (bh recommended)
 # both CIC_R and FIR_R = 0 -> only the raw 1-bit spectrum is analysed
 THRESH = None              # e.g. 0.9 if FILE is an analog v(qout) export (time, value)
@@ -40,6 +41,7 @@ if FIR_STOP is not None:
 sys.argv += ["--col", str(COL)]
 if THRESH is not None:
     sys.argv += ["--thresh", str(THRESH)]
+sys.argv += ["--cursor", "1" if CURSOR else "0"]
 if IGNORE_TIME:
     sys.argv += ["--ignore-time", "1"]
 if RESAMPLE:

@@ -3,7 +3,7 @@
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect]
                                   [--cic R] [--cic-order N] [--fir R2] [--fir-fc F] [--fir-stop F] [--fir-atten dB]
-                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1]
+                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1] [--cursor 0]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -35,6 +35,12 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
   --ignore-time 1  two-column file whose time column is too coarse (few digits) but whose
                 rows are exactly one sample per clock: use the values in order
   --col C       if the file has more than 2 columns: which column (0-based) is v(qout), default 1
+  --cursor 0    disable the interactive cursor line (default on when a plot window opens):
+                move the mouse = vertical cursor line + f / dBFS readout (snaps to the
+                data); left click = drop marker M1, M2 (shows delta f / delta dB);
+                right click or 'c' = clear markers; left/right arrow keys = step the
+                cursor one bin; 'm' = drop a marker at the cursor.
+                Not active while the toolbar zoom/pan tool is selected.
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
 The CIC: `order` integrators at fs, decimate by R, `order` combs at fs/R, unity DC gain
@@ -287,10 +293,117 @@ if cic_R > 0 or fir_R > 0:
         print(f"decimated spectrum: SNR/ENOB computed over 0..{bw_dec:g} Hz (FIR passband)")
     dec = analyze(y, fs_o, bw_dec, " + ".join(label), fin_exp, opts.get("dec-window", "bh"))
 
+class CursorTool:
+    """Vertical cursor line with f/dBFS readout, two markers and delta readout."""
+
+    def __init__(self, fig, panels):
+        # panels: {axes: [(label, x, y), ...]}; the first entry is the reference trace
+        self.fig, self.panels = fig, panels
+        self.cur_ax, self.cur_x = None, None
+        self.marks = []                               # [(ax, x, y, artists)]
+        self.vl = {a: a.axvline(1, c="0.35", lw=0.8, visible=False) for a in panels}
+        self.note = {a: a.annotate("", xy=(0, 0), xytext=(12, 12), textcoords="offset points",
+                                   fontsize=8, visible=False,
+                                   bbox=dict(boxstyle="round", fc="w", ec="0.5", alpha=0.9))
+                     for a in panels}
+        self.info = fig.text(0.01, 0.003, "", fontsize=8, family="monospace", va="bottom")
+        self.help = fig.text(0.99, 0.003, "mouse: cursor | click: marker | right-click/c: clear"
+                             " | arrows: step | m: marker", fontsize=7, ha="right",
+                             va="bottom", color="0.4")
+        for ev, fn in (("motion_notify_event", self.move), ("button_press_event", self.click),
+                       ("key_press_event", self.key)):
+            fig.canvas.mpl_connect(ev, fn)
+
+    @staticmethod
+    def _nearest(ax, x, xs):
+        if ax.get_xscale() == "log":
+            return int(np.argmin(np.abs(np.log10(np.maximum(xs, 1e-30)) - np.log10(max(x, 1e-30)))))
+        return int(np.argmin(np.abs(xs - x)))
+
+    def _busy(self):                                  # zoom / pan tool active?
+        tb = getattr(self.fig.canvas, "toolbar", None)
+        return bool(tb is not None and str(getattr(tb, "mode", "")))
+
+    def _show(self, ax, x):
+        traces = self.panels[ax]
+        _, xr, yr = traces[0]
+        i = self._nearest(ax, x, xr)
+        self.cur_ax, self.cur_x, self.cur_i = ax, xr[i], i
+        lines = []
+        for lab, xs, ys in traces:
+            j = self._nearest(ax, xr[i], xs)
+            lines.append(f"{lab + ': ' if lab else ''}f={xs[j]:.1f} {self.unit(ax)}  {ys[j]:.1f} dBFS")
+        self.vl[ax].set_xdata([xr[i], xr[i]])
+        for a in self.panels:
+            self.vl[a].set_visible(a is ax)
+            self.note[a].set_visible(a is ax)
+        self.note[ax].xy = (xr[i], yr[i])
+        self.note[ax].set_text("\n".join(lines))
+        self.fig.canvas.draw_idle()
+
+    @staticmethod
+    def unit(ax):
+        return "kHz" if ax.get_xlabel().lower().startswith("khz") else "Hz"
+
+    def move(self, ev):
+        if ev.inaxes in self.panels and ev.xdata is not None and not self._busy():
+            self._show(ev.inaxes, ev.xdata)
+
+    def key(self, ev):
+        if ev.key in ("left", "right") and self.cur_ax is not None:
+            xs = self.panels[self.cur_ax][0][1]
+            i = min(max(self.cur_i + (1 if ev.key == "right" else -1), 0), len(xs) - 1)
+            self._show(self.cur_ax, xs[i])
+        elif ev.key == "m" and self.cur_ax is not None:
+            self.mark()
+        elif ev.key == "c":
+            self.clear()
+
+    def click(self, ev):
+        if self._busy() or ev.inaxes not in self.panels:
+            return
+        if ev.button == 3:
+            self.clear()
+        elif ev.button == 1:
+            self._show(ev.inaxes, ev.xdata)
+            self.mark()
+
+    def mark(self):
+        ax = self.cur_ax
+        _, xs, ys = self.panels[ax][0]
+        if len(self.marks) >= 2:
+            self.clear()
+        art = ax.plot([xs[self.cur_i]], [ys[self.cur_i]], "v", c="C3", ms=7)[0]
+        txt = ax.annotate(f"M{len(self.marks) + 1}", (xs[self.cur_i], ys[self.cur_i]),
+                          xytext=(0, 8), textcoords="offset points", ha="center",
+                          fontsize=8, color="C3")
+        self.marks.append((ax, xs[self.cur_i], ys[self.cur_i], (art, txt)))
+        self._readout()
+
+    def clear(self):
+        for *_, arts in self.marks:
+            for a in arts:
+                a.remove()
+        self.marks = []
+        self._readout()
+
+    def _readout(self):
+        parts = [f"M{k + 1}: {x:.1f} {self.unit(a)}, {y:.1f} dBFS"
+                 for k, (a, x, y, _) in enumerate(self.marks)]
+        if len(self.marks) == 2:
+            (a1, x1, y1, _), (a2, x2, y2, _) = self.marks
+            if a1 is a2:
+                parts.append(f"delta f = {x2 - x1:.1f} {self.unit(a1)}, delta = {y2 - y1:.1f} dB")
+        self.info.set_text("   ".join(parts))
+        self.fig.canvas.draw_idle()
+
+
 rs = [raw] + ([dec] if dec else [])
 fig, ax = plt.subplots(len(rs) + 1, 1, figsize=(9, 3.7 * (len(rs) + 1)))
+panels = {}
 for r, a in zip(rs, ax):
     a.semilogx(r["f"][1:], r["d"][1:], lw=0.7)
+    panels[a] = [("", r["f"][1:], r["d"][1:])]
     a.axvline(r["bw"], c="r", ls="--")
     a.set(xlabel="Frequency [Hz]", ylabel="dBFS", ylim=(-140, 0),
           title=f"{r['name']}: fin={r['fin']:.0f} Hz, SNR={r['snr']:.1f} dB, "
@@ -299,11 +412,15 @@ for r, a in zip(rs, ax):
 for r, lab in zip(rs, ("raw", dec["name"] if dec else "")):
     m = r["f"] <= bw * 1.2
     ax[-1].plot(r["f"][m] / 1e3, r["d"][m], "o-", ms=3, lw=0.8, label=lab)
+    panels.setdefault(ax[-1], []).append((lab, r["f"][m] / 1e3, r["d"][m]))
 ax[-1].axvline(bw / 1e3, c="r", ls="--")
 ax[-1].set(xlabel="kHz", ylabel="dBFS", ylim=(-140, 0), title="In-band")
 ax[-1].legend()
 ax[-1].grid(alpha=0.3)
-plt.tight_layout()
+plt.tight_layout(rect=(0, 0.03, 1, 1))
 plt.savefig("fft_result.png", dpi=110)
+if opts.get("cursor", "1") not in ("0", "false") and (
+        matplotlib.get_backend().lower() != "agg" or opts.get("cursor") == "force"):
+    cursor = CursorTool(fig, panels)              # keep a reference alive
 if matplotlib.get_backend().lower() != "agg":
     plt.show()
