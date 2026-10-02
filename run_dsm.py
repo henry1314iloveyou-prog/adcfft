@@ -23,6 +23,7 @@ DEC_WINDOW = "bh"          # window for the decimated spectrum (bh recommended)
 THRESH = None              # e.g. 0.9 if FILE is an analog v(qout) export (time, value)
 COL = 1                    # CSV column (0-based) holding v(qout); column 0 = time
 PHASE = 62.5e-9            # sampling instant inside each clock period [s] = 10p+0.75*tck
+IGNORE_TIME = False        # True: rows are exactly one sample per clock; use their order, ignore time column
 RESAMPLE = False           # True: re-sample a (time, value) file at 1/FS before thresholding
 # ------------------------------------------
 
@@ -39,6 +40,8 @@ if FIR_STOP is not None:
 sys.argv += ["--col", str(COL)]
 if THRESH is not None:
     sys.argv += ["--thresh", str(THRESH)]
+if IGNORE_TIME:
+    sys.argv += ["--ignore-time", "1"]
 if RESAMPLE:
     sys.argv += ["--resample", "1", "--phase", str(PHASE)]
 runpy.run_path("dsm_fft.py", run_name="__main__")

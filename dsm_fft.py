@@ -3,7 +3,7 @@
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect]
                                   [--cic R] [--cic-order N] [--fir R2] [--fir-fc F] [--fir-stop F] [--fir-atten dB]
-                                  [--thresh V] [--resample 1] [--phase P] [--col C]
+                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -32,6 +32,8 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
                 interpolation before thresholding (use when the time step is not 1/fs)
   --phase P     with --resample: sample at P + k/fs [s] (e.g. 62.5e-9 = 10p+0.75*tck);
                 default = the first time point in the file
+  --ignore-time 1  two-column file whose time column is too coarse (few digits) but whose
+                rows are exactly one sample per clock: use the values in order
   --col C       if the file has more than 2 columns: which column (0-based) is v(qout), default 1
 Needs: numpy, matplotlib   (pip install numpy matplotlib)
 
@@ -186,6 +188,17 @@ if x.ndim == 2 and x.shape[1] > 2:
     print(f"file has {x.shape[1]} columns; using column {col} as the signal "
           f"(change with --col)")
     x = x[:, [0, col]]
+if x.ndim == 2 and opts.get("ignore-time", "0") not in ("0", "false"):
+    # rows are one sample per clock (e.g. HSPICE `.option interp` + tstep = tck):
+    # trust the ORDER, not the (possibly low-precision) time column
+    t_col = x[:, 0]
+    x = x[:, 1]
+    print(f"ignoring the time column: {len(x)} rows taken as one sample per clock "
+          f"(time column spans {t_col[0]:.4g} .. {t_col[-1]:.4g} s, "
+          f"expected ~{(len(x) - 1) / fs:.4g} s)")
+    if abs((t_col[-1] - t_col[0]) * fs / (len(x) - 1) - 1) > 0.01:
+        sys.exit("ERROR: the row count does not match the time span at one row per clock; "
+                 "the file is not one-sample-per-clock -- do not use --ignore-time")
 if x.ndim == 2:                           # two columns: time, value
     t, x = x[:, 0], x[:, 1]
     if "resample" in opts and opts["resample"] not in ("0", "false"):
