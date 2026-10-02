@@ -7,9 +7,9 @@ Ts=1./fs
 t=linspace(0,Ts*ny,ny);
 y=[t',adc1khz1150927];
 %y=y';
-BW=10000                     %   signal bandwidth
+OSR=256                      %   modulator OSR = CIC decimation ratio
+BW=fs/(2*OSR)                %   signal bandwidth = 23.4375 kHz
 Fn=2*BW;                     %   fn=Nyquist-rate sampling frequency
-OSR=64                  %   for decimation filter 
 
 Amp=100e-3;                  %   Amplitude
 OP_offset=0e-3               %   OP_offset
@@ -20,7 +20,7 @@ pts=length(y);
 %pts=8192
 
 %G=2.^1;                    %   Gain for 1st stage decimation filter
-G=2.^-27;                    %   Gain for 1st stage decimation filter
+G=1/OSR^3;                   %   unity-DC-gain for 3rd-order CIC (was 2^-27, only right for OSR=64)
 Tstop=(pts-1)/fs
 
 fs4=fs./OSR
@@ -50,7 +50,7 @@ sim('deci_hspice');
 % deci_fir=deci_fir1((length(deci_fir1)/2)+1:length(deci_fir1));
 % 
 deci_fir116=deci_fir1*2.^24;
-deci_fir116(1:50)=[];
+deci_fir116(1:5)=[];         % drop CIC start-up transient (3rd order -> ~3 samples)
 plot(deci_fir116)
 [ymax,idmax]=max(deci_fir116)
 hold on
@@ -93,7 +93,7 @@ N_signal = length(deci_fir116);
 
 % 1. Apply a Blackman-Harris window (superior sidelobe suppression)
 w = blackmanharris(N_signal);
-signal_windowed = deci_fir116 .* w;
+signal_windowed = (deci_fir116 - mean(deci_fir116)) .* w;   % remove DC before FFT
 
 % 2. Zero-pad to a large FFT size (e.g., 65536 points) for a smooth, high-resolution curve
 N_fft = max(2^16, 4 * nextpow2(N_signal)); 
@@ -107,7 +107,8 @@ pyy(2:end-1) = 2 * pyy(2:end-1); % Single-sided spectrum scaling
 pyy(floor(N_fft/2)+2:end) = [];
 
 % 5. Normalize to dBFS (Full Scale)
-FullScale = max(abs(deci_fir116)); 
+FullScale = 2^24 / 2;   % CIC output spans 0..2^24 -> +/-2^23 after DC removal
+
 pyy_dbfs = pyy / (FullScale^2);
 Pyy_dB = 10 * log10(pyy_dbfs + eps);
 
@@ -135,11 +136,12 @@ ylim([-180 10]);
 % 1. Check Raw Input Spectrum
 N_raw = length(adc1khz1150927);
 w_raw = hann(N_raw);
-Y_raw = fft(adc1khz1150927 .* w_raw);
-P_raw = 10 * log10((Y_raw .* conj(Y_raw)) / (sum(w_raw)^2) + eps);
+Y_raw = fft((adc1khz1150927 - mean(adc1khz1150927)) .* w_raw);   % remove DC
+P_raw = (Y_raw .* conj(Y_raw)) / (sum(w_raw)^2);
 f_raw = fs * (0:floor(N_raw/2)) / N_raw;
 P_raw_single = P_raw(1:floor(N_raw/2)+1);
 P_raw_single(2:end-1) = 2 * P_raw_single(2:end-1);
+P_raw_single = 10*log10(P_raw_single + eps);
 
 figure('Name', 'Diagnostics');
 subplot(2,1,1);
@@ -148,16 +150,17 @@ grid on;
 title('1. RAW Input Data Spectrum (Before Decimation)');
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
-xlim([0 10000]); % Zoom on 1kHz
+xlim([0 BW]); % in-band
 
 % 2. Check Decimated Filter Output Spectrum
 N_dec = length(deci_fir116);
 w_dec = hann(N_dec);
-Y_dec = fft(deci_fir116 .* w_dec);
-P_dec = 10 * log10((Y_dec .* conj(Y_dec)) / (sum(w_dec)^2) + eps);
+Y_dec = fft((deci_fir116 - mean(deci_fir116)) .* w_dec);
+P_dec = (Y_dec .* conj(Y_dec)) / (sum(w_dec)^2);
 f_dec = fs4 * (0:floor(N_dec/2)) / N_dec;
 P_dec_single = P_dec(1:floor(N_dec/2)+1);
 P_dec_single(2:end-1) = 2 * P_dec_single(2:end-1);
+P_dec_single = 10*log10(P_dec_single + eps);
 
 subplot(2,1,2);
 plot(f_dec(2:end), P_dec_single(2:end), 'b', 'LineWidth', 1);
@@ -165,6 +168,6 @@ grid on;
 title('2. DECIMATED Output Spectrum (After deci_hspice)');
 xlabel('Frequency [Hz]');
 ylabel('Power [dB]');
-xlim([0 10000]); % Zoom on 1kHz
+xlim([0 BW]); % in-band
 disp([max(deci_fir116), min(deci_fir116), mean(deci_fir116)]);
 
