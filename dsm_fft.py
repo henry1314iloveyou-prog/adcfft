@@ -439,24 +439,58 @@ class CursorTool:
 
 
 rs = [raw] + ([dec] if dec else [])
-fig, ax = plt.subplots(len(rs) + 1, 1, figsize=(9, 3.7 * (len(rs) + 1)))
+fig, axs = plt.subplots(len(rs) + 1, 2, figsize=(14, 4.3 * (len(rs) + 1)),
+                        gridspec_kw={"width_ratios": [3.3, 1]})
+ax, side = axs[:, 0], axs[:, 1]               # spectra on the left, numbers on the right
+for a in side:
+    a.axis("off")
+def metrics_text(r):
+    """Multi-line summary of one analysis for the plot."""
+    lines = [f"{r['name']}   [{r['win']} window]",
+             f"fs = {r['fs'] / 1e3:g} kHz   N = {r['N']}   bin = {r['df']:.1f} Hz",
+             f"BW = {r['bw'] / 1e3:.2f} kHz",
+             f"fin  = {r['fin']:.1f} Hz   {r['amp']:.2f} dBFS",
+             f"SINAD = {r['sinad']:.2f} dB",
+             f"SNR   = {r['snr_nh']:.2f} dB  (excl. harmonics)",
+             f"THD   = {r['thd']:.1f} dB",
+             f"ENOB  = {r['enob']:.2f} bit",
+             f"SFDR  = {r['sfdr']:.1f} dB",
+             f"noise floor = {r['nd']:.1f} dBFS/Hz (+-3 dB)"]
+    if r["harm"]:
+        lines.append("harmonics [dBFS]: " + " ".join(f"HD{h}={lv:.0f}" for h, _, lv in r["harm"][:6]))
+    return "\n".join(lines)
+
+
 panels = {}
 for r, a in zip(rs, ax):
     a.semilogx(r["f"][1:], r["d"][1:], lw=0.7)
     panels[a] = [("", r["f"][1:], r["d"][1:])]
     a.axvline(r["bw"], c="r", ls="--")
-    a.set(xlabel="Frequency [Hz]", ylabel="dBFS", ylim=(-140, 0),
-          title=f"{r['name']}: fin={r['fin']:.0f} Hz, SINAD={r['sinad']:.1f} dB, "
-                f"SNR(no harm.)={r['snr_nh']:.1f} dB, ENOB={r['enob']:.1f}  [{r['win']}]")
+    a.set(xlabel="Frequency [Hz]", ylabel="dBFS", ylim=(-140, 0), title=r["name"])
     a.grid(True, which="both", alpha=0.3)
+for r, sa in zip(rs, side):
+    sa.text(0.0, 1.0, metrics_text(r), transform=sa.transAxes, ha="left", va="top",
+            fontsize=8, family="monospace",
+            bbox=dict(boxstyle="round", fc="0.97", ec="0.6"))
 for r, lab in zip(rs, ("raw", dec["name"] if dec else "")):
     m = r["f"] <= bw * 1.2
     ax[-1].plot(r["f"][m] / 1e3, r["d"][m], "o-", ms=3, lw=0.8, label=lab)
     panels.setdefault(ax[-1], []).append((lab, r["f"][m] / 1e3, r["d"][m]))
 ax[-1].axvline(bw / 1e3, c="r", ls="--")
 ax[-1].set(xlabel="kHz", ylabel="dBFS", ylim=(-140, 0), title="In-band")
-ax[-1].legend()
+ax[-1].legend(loc="lower left", fontsize=8)
 ax[-1].grid(alpha=0.3)
+# comparison table of all analyses (right of the in-band panel)
+cols = ["raw"] + (["decimated"] if dec else [])
+rows = [("SINAD [dB]", "sinad", "{:.2f}"), ("SNR excl. harm. [dB]", "snr_nh", "{:.2f}"),
+        ("THD [dB]", "thd", "{:.1f}"), ("ENOB [bit]", "enob", "{:.2f}"),
+        ("SFDR [dB]", "sfdr", "{:.1f}"), ("fin [Hz]", "fin", "{:.1f}"),
+        ("amplitude [dBFS]", "amp", "{:.2f}"), ("noise floor [dBFS/Hz]", "nd", "{:.1f}")]
+tab = side[-1].table(cellText=[[fmt.format(r[key]) for r in rs] for _, key, fmt in rows],
+                     rowLabels=[lab for lab, _, _ in rows], colLabels=cols,
+                     cellLoc="center", loc="center", bbox=[0.55, 0.15, 0.45, 0.7])
+tab.auto_set_font_size(False)
+tab.set_fontsize(7.5)
 plt.tight_layout(rect=(0, 0.03, 1, 1))
 plt.savefig("fft_result.png", dpi=110)
 if opts.get("cursor", "1") not in ("0", "false") and (
