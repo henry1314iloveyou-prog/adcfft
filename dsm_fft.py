@@ -3,7 +3,7 @@
 Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N] [--fin F]
                                   [--window bh|hann|rect]
                                   [--cic R] [--cic-order N] [--fir R2] [--fir-fc F] [--fir-stop F] [--fir-atten dB]
-                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1] [--cursor 0] [--bw Hz]
+                                  [--thresh V] [--resample 1] [--phase P] [--col C] [--ignore-time 1] [--cursor 0] [--bw Hz] [--nharm N]
   --skip S  drop the first S samples (start-up transient), default 0
   --n N     use N contiguous samples after the skip (default: all, cut to a
             multiple of OSR so the CIC output is whole)
@@ -37,6 +37,7 @@ Usage: python dsm_fft.py [capture.txt] [fs] [OSR] [cic_order] [--skip S] [--n N]
   --col C       if the file has more than 2 columns: which column (0-based) is v(qout), default 1
   --bw Hz       signal bandwidth for SNR/ENOB/SFDR; default fs/(2*OSR). Use it when the
                 bandwidth is not exactly fs/(2*OSR), e.g. --bw 24300
+  --nharm N     number of harmonics (HD2..HD(N+1)) counted in THD / excluded from SNR, default 8
   --cursor 0    disable the interactive cursor line (default on when a plot window opens):
                 move the mouse = vertical cursor line + f / dBFS readout (snaps to the
                 data); left click = drop marker M1, M2 (shows delta f / delta dB);
@@ -71,6 +72,7 @@ osr = int(float(args[2])) if len(args) > 2 else 256
 order = int(args[3]) if len(args) > 3 else 3
 skip = int(float(opts.get("skip", 0)))
 window = opts.get("window", "bh")
+nharm = int(opts.get("nharm", 8))
 if window not in WINDOWS:
     sys.exit("--window must be bh, hann or rect")
 if "cic" in opts:
@@ -158,13 +160,48 @@ def analyze(v, fs, bw, name, fin_expect=None, win=None):
     mask &= ~sig
     Ps = P[sig].sum()
     enbw = N * np.sum(w ** 2) / np.sum(w) ** 2     # window noise bandwidth [bins]
-    snr = 10 * np.log10(Ps / P[mask].sum())
+
+    # harmonics of the tone, folded into 0..fs/2; only those inside the band and not
+    # overlapping the signal lobe are counted
+    hmask = np.zeros(len(P), bool)
+    harm = []
+    for h in range(2, nharm + 2):
+        fh = (h * fin) % fs
+        fh = fs - fh if fh > fs / 2 else fh
+        kh = int(round(fh / df))
+        if hw + 2 <= kh - hw and kh + hw <= bwb and kh - hw > k0 + hw:
+            hmask[kh - hw:kh + hw + 1] = True
+            harm.append((h, fh, 10 * np.log10(4 * P[max(kh - 1, 0):kh + 2].max() + 1e-30)))
+    hmask &= mask
+    Pn_all = P[mask].sum()                            # noise + distortion
+    Ph = P[hmask].sum()                               # harmonic lobes (noise inside included)
+    peaks = np.zeros(len(P), bool)                    # harmonic centres +-1 bin
+    for h, fh, _ in harm:
+        kh = int(round(fh / df))
+        peaks[max(kh - 1, 0):kh + 2] = True
+    clean = mask & ~peaks
+    floor = np.median(P[clean]) if clean.any() else np.median(P[mask])   # robust noise floor/bin
+    # noise only: remove each harmonic lobe, but put back the noise floor that sat in those bins
+    Pn_nh = max(Pn_all - Ph + floor * hmask.sum(), 1e-30)
+    sinad = 10 * np.log10(Ps / Pn_all)
+    snr = sinad                                       # kept for the plots / older code
+    snr_nh = 10 * np.log10(Ps / Pn_nh)
+    thd = 10 * np.log10(max(Ph - floor * hmask.sum(), 1e-30) / Ps) if harm else float("nan")
+    nd = 10 * np.log10(4 * floor / (enbw * df))       # noise density, dBFS/Hz (+-3 dB, see note)
+    n_floor = int(clean.sum())
     r = dict(name=name, win=wn, bw=bw, N=N, fs=fs, f=f, d=10 * np.log10(4 * P + 1e-30), fin=fin,
-             amp=10 * np.log10(4 * Ps / enbw), snr=snr, enob=(snr - 1.76) / 6.02,
+             amp=10 * np.log10(4 * Ps / enbw), snr=snr, sinad=sinad, snr_nh=snr_nh, thd=thd,
+             harm=harm, nd=nd, n_floor=n_floor, enob=(sinad - 1.76) / 6.02,
              sfdr=10 * np.log10(Ps / P[mask].max()), df=df)
     print(f"[{name}] N={N} fs={fs:g} Hz bin={df:.1f} Hz | fin={fin:.1f} Hz "
-          f"({r['amp']:.2f} dBFS) SNR={snr:.2f} dB ENOB={r['enob']:.2f} "
-          f"SFDR={r['sfdr']:.1f} dB")
+          f"({r['amp']:.2f} dBFS) SINAD={sinad:.2f} dB  SNR(excl. harmonics)={snr_nh:.2f} dB  "
+          f"THD={thd:.1f} dB  ENOB={r['enob']:.2f} bit  SFDR={r['sfdr']:.1f} dB")
+    if harm:
+        print(f"[{name}]   harmonics: " + "  ".join(f"HD{h} {fh / 1e3:.2f}k {lv:.1f}dBFS"
+                                                   for h, fh, lv in harm))
+    print(f"[{name}]   in-band noise floor (median of {n_floor} bins, harmonic peaks excluded): "
+          f"{nd:.1f} dBFS/Hz  -- only +-3 dB accurate for records this short; do not use it "
+          f"to compare runs")
     return r
 
 
@@ -409,8 +446,8 @@ for r, a in zip(rs, ax):
     panels[a] = [("", r["f"][1:], r["d"][1:])]
     a.axvline(r["bw"], c="r", ls="--")
     a.set(xlabel="Frequency [Hz]", ylabel="dBFS", ylim=(-140, 0),
-          title=f"{r['name']}: fin={r['fin']:.0f} Hz, SNR={r['snr']:.1f} dB, "
-                f"ENOB={r['enob']:.1f}  [{r['win']}]")
+          title=f"{r['name']}: fin={r['fin']:.0f} Hz, SINAD={r['sinad']:.1f} dB, "
+                f"SNR(no harm.)={r['snr_nh']:.1f} dB, ENOB={r['enob']:.1f}  [{r['win']}]")
     a.grid(True, which="both", alpha=0.3)
 for r, lab in zip(rs, ("raw", dec["name"] if dec else "")):
     m = r["f"] <= bw * 1.2
