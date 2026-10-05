@@ -10,8 +10,8 @@ FS     = 12e6              # modulator clock [Hz]
 OSR    = 256
 BW     = None             # signal bandwidth [Hz]; None = FS/(2*OSR) = 23437.5.  e.g. 24300
 SKIP   = 200               # start-up samples to drop (= nskip in the netlist)
-N      = 16384             # contiguous samples to analyse
-FIN    = 3662.109375       # expected input frequency = M*FS/N, M=5
+N      = 32768             # contiguous samples to analyse
+FIN    = 2563.4765625      # expected input frequency = M*FS/N, M=7 (N=32768)
 WINDOW = "hann"            # hann | bh | rect
 CIC_R     = 0              # CIC decimation ratio, 0 = CIC off      (e.g. 128)
 CIC_ORDER = 3              # CIC order (>= modulator order + 1)
