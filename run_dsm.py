@@ -5,14 +5,16 @@ import runpy
 import sys
 
 # ---------------- settings ----------------
-FILE   = "qout_bits.txt"   # one 0/1 per line (qout thresholded at 0.9 V)
+FILE   = "adcfft_withnoise_1151005.txt"   # with .trannoise (N=32768, M=7)
+#FILE  = "adcfft_nonoise_1151006.txt"     # without .trannoise (same N, M)
+#        (v(qout) voltage export or 0/1 file; two rails are thresholded automatically)
 FS     = 12e6              # modulator clock [Hz]
 OSR    = 256
 BW     = None             # signal bandwidth [Hz]; None = FS/(2*OSR) = 23437.5.  e.g. 24300
 SKIP   = 200               # start-up samples to drop (= nskip in the netlist)
 N      = 32768             # contiguous samples to analyse
 FIN    = 2563.4765625      # expected input frequency = M*FS/N, M=7 (N=32768)
-WINDOW = "hann"            # hann | bh | rect
+WINDOW = "bh"              # bh | hann | rect   (same as run_compare.py)
 CIC_R     = 0              # CIC decimation ratio, 0 = CIC off      (e.g. 128)
 CIC_ORDER = 3              # CIC order (>= modulator order + 1)
 FIR_R     = 0              # FIR decimation ratio, 0 = FIR off      (e.g. 2)

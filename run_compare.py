@@ -11,8 +11,8 @@ LABEL_B = "no noise"
 FS      = 12e6
 OSR     = 256
 SKIP    = 200
-N       = 32768
-FIN     = 2563.4765625                        # = 7 * FS / N
+N       = 32768                               # same N / M / SKIP as run_dsm.py
+FIN     = 2563.4765625                        # = M * FS / N, M = 7, N = 32768
 WINDOW  = "bh"                                # bh | hann
 BW      = None                                # None = FS/(2*OSR); e.g. 24300
 THRESH  = None                                # None = auto (two-rail voltage) / 0.9
