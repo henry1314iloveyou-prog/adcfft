@@ -7,9 +7,9 @@ import sys
 # ---------------- settings ----------------
 # (file, label, injected noise-only SNR in dB or None).  The reference run is the one at REF.
 FILES = [
-    ("adcfft_addnoise_70dB.txt", "injected 70 dB",      70),   # A
-    ("adcfft_addnoise_80dB.txt", "injected 80 dB",      80),   # B
-    ("adcfft_addnoise_90dB.txt", "injected 90 dB",      90),   # C
+    ("adcfft_70dbpwlnoise.txt", "injected 70 dB",      70),   # A
+    ("adcfft_80dbpwlnoise.txt", "injected 80 dB",      80),   # B
+    ("adcfft_90dbpwlnoise.txt", "injected 90 dB",      90),   # C
     ("adcfft_1151002a.txt",      "baseline (no noise)", None), # D
 ]
 REF = -1                   # index of the reference run (-1 = the last one = baseline)

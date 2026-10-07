@@ -131,15 +131,17 @@ def main(argv):
     cells = [[f(r[key], fmt) for r in res] for _, key, fmt in rows]
     names = [lab for lab, _, _ in rows]
     if inject is not None:
-        base = r0["snr_nh"]
-        exp = []
-        for inj in inject:
-            exp.append("-" if inj is None else
-                       f"{-10 * np.log10(10 ** (-base / 10) + 10 ** (-inj / 10)):.2f}")
+        base, base_d = r0["snr_nh"], r0["sinad"]
+        def add(b, inj):
+            return -10 * np.log10(10 ** (-b / 10) + 10 ** (-inj / 10))
+        exp = ["-" if inj is None else f"{add(base, inj):.2f}" for inj in inject]
+        exp_d = ["-" if inj is None else f"{add(base_d, inj):.2f}" for inj in inject]
         cells.insert(2, [("-" if inj is None else f"{inj:g}") for inj in inject])
         names.insert(2, "injected SNR [dB]")
         cells.insert(3, exp)
         names.insert(3, "expected SNR [dB]")
+        cells.insert(4, exp_d)
+        names.insert(4, "expected SINAD [dB]")
     hs = [dict((h, lv) for h, _, lv in r["harm"]) for r in res]
     for h in sorted(set.intersection(*[set(d) for d in hs])):
         if max(d[h] for d in hs) > -105:
@@ -175,11 +177,12 @@ def main(argv):
     plt.savefig(out, dpi=110)
     print(f"saved {out}")
     if inject is not None:
-        print("\nmeasured vs expected SNR (excl. harmonics):")
-        for lab, r, inj, e in zip(labels, res, inject, exp):
+        print("\nmeasured vs expected (baseline noise + injected noise, added in power):")
+        for lab, r, inj, e, ed in zip(labels, res, inject, exp, exp_d):
             if inj is not None:
-                print(f"  {lab:24s} injected {inj:g} dB   expected {e} dB   measured {r['snr_nh']:.2f} dB   "
-                      f"(measured - expected = {r['snr_nh'] - float(e):+.2f} dB)")
+                print(f"  {lab:20s} SNR  excl. harm.: expected {e:>6s}  measured {r['snr_nh']:6.2f}  "
+                      f"diff {r['snr_nh'] - float(e):+5.2f} dB   |   SINAD: expected {ed:>6s}  "
+                      f"measured {r['sinad']:6.2f}  diff {r['sinad'] - float(ed):+5.2f} dB")
     if matplotlib.get_backend().lower() != "agg":
         CursorTool = gs[0]["CursorTool"]
         cursor = CursorTool(fig, panels)          # noqa: F841  (keep a reference alive)
