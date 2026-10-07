@@ -174,20 +174,37 @@ def analyze(v, fs, bw, name, fin_expect=None, win=None):
             hmask[kh - hw:kh + hw + 1] = True
             harm.append((h, fh, 10 * np.log10(4 * P[max(kh - 1, 0):kh + 2].max() + 1e-30)))
     hmask &= mask
-    Pn_all = P[mask].sum()                            # noise + distortion
-    Ph = P[hmask].sum()                               # harmonic lobes (noise inside included)
     peaks = np.zeros(len(P), bool)                    # harmonic centres +-1 bin
     for h, fh, _ in harm:
         kh = int(round(fh / df))
         peaks[max(kh - 1, 0):kh + 2] = True
-    clean = mask & ~peaks
-    floor = np.median(P[clean]) if clean.any() else np.median(P[mask])   # robust noise floor/bin
+    clean = mask & ~peaks                             # bins that hold (almost) only noise
+    floor = P[clean].mean() if clean.any() else P[mask].mean()   # mean noise power per bin
+    # The DC lobe and the signal lobe are not summed (they hold window leakage of DC / the tone),
+    # but there is noise in those bins too. Put it back from the nearest clean bins on either side,
+    # as IEEE 1241 does; without this, white in-band noise is under-counted (about 2.5 dB at
+    # N = 16384, 1.1 dB at N = 32768).
+    ibins = np.arange(len(P))
+    def local_floor(lo, hi, span=6):
+        idx = ibins[clean]
+        near = np.concatenate([idx[idx < lo][-span:], idx[idx > hi][:span]])
+        return P[near].mean() if len(near) else floor
+    fill = 0.0
+    dc_lo, dc_hi = 1, min(hw + 1, bwb)
+    if dc_hi >= dc_lo:
+        fill += local_floor(dc_lo, dc_hi) * (dc_hi - dc_lo + 1)
+    s_lo, s_hi = max(k0 - hw, dc_hi + 1), min(k0 + hw, bwb)
+    if s_hi >= s_lo:
+        fill += local_floor(s_lo, s_hi) * (s_hi - s_lo + 1)
+    Pn_all = P[mask].sum() + fill                     # noise + distortion
+    Ph = P[hmask].sum()                               # harmonic lobes (noise inside included)
     # noise only: remove each harmonic lobe, but put back the noise floor that sat in those bins
     Pn_nh = max(Pn_all - Ph + floor * hmask.sum(), 1e-30)
     sinad = 10 * np.log10(Ps / Pn_all)
     snr = sinad                                       # kept for the plots / older code
     snr_nh = 10 * np.log10(Ps / Pn_nh)
-    thd = 10 * np.log10(max(Ph - floor * hmask.sum(), 1e-30) / Ps) if harm else float("nan")
+    h_excess = Ph - floor * hmask.sum()               # harmonic power above the noise floor
+    thd = 10 * np.log10(h_excess / Ps) if (harm and h_excess > 0) else float("nan")   # nan: below noise
     nd = 10 * np.log10(4 * floor / (enbw * df))       # noise density, dBFS/Hz (+-3 dB, see note)
     n_floor = int(clean.sum())
     r = dict(name=name, win=wn, bw=bw, N=N, fs=fs, f=f, d=10 * np.log10(4 * P + 1e-30), fin=fin,
@@ -196,7 +213,7 @@ def analyze(v, fs, bw, name, fin_expect=None, win=None):
              sfdr=10 * np.log10(Ps / P[mask].max()), df=df)
     print(f"[{name}] N={N} fs={fs:g} Hz bin={df:.1f} Hz | fin={fin:.1f} Hz "
           f"({r['amp']:.2f} dBFS) SINAD={sinad:.2f} dB  SNR(excl. harmonics)={snr_nh:.2f} dB  "
-          f"THD={thd:.1f} dB  ENOB={r['enob']:.2f} bit  SFDR={r['sfdr']:.1f} dB")
+          f"THD={('%.1f dB' % thd) if thd == thd else 'n/a (below noise)'}  ENOB={r['enob']:.2f} bit  SFDR={r['sfdr']:.1f} dB")
     if harm:
         print(f"[{name}]   harmonics: " + "  ".join(f"HD{h} {fh / 1e3:.2f}k {lv:.1f}dBFS"
                                                    for h, fh, lv in harm))
@@ -455,7 +472,7 @@ if not NOPLOT:
                  f"fin  = {r['fin']:.1f} Hz   {r['amp']:.2f} dBFS",
                  f"SINAD = {r['sinad']:.2f} dB",
                  f"SNR   = {r['snr_nh']:.2f} dB  (excl. harmonics)",
-                 f"THD   = {r['thd']:.1f} dB",
+                 f"THD   = {('%.1f dB' % r['thd']) if r['thd'] == r['thd'] else 'n/a (below noise)'}",
                  f"ENOB  = {r['enob']:.2f} bit",
                  f"SFDR  = {r['sfdr']:.1f} dB",
                  f"noise floor = {r['nd']:.1f} dBFS/Hz (+-3 dB)"]
