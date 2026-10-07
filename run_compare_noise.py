@@ -1,23 +1,22 @@
-"""Overlay several runs (e.g. injected-noise runs and a no-noise baseline) in one FFT plot.
+"""Compare the run WITH .trannoise against the run WITHOUT it (N=32768, M=7).
 GUI friendly: edit the settings and press Run (F5).
 Keep this file, dsm_fft.py and dsm_compare.py together with the data files."""
 import os
 import sys
 
 # ---------------- settings ----------------
-# (file, label, injected noise-only SNR in dB or None).  The reference run is the one at REF.
+# (file, label, injected SNR = None).  The reference run is the one at REF (-1 = last = without noise).
 FILES = [
-    ("adcfft_70dbpwlnoise.txt", "injected 70 dB",      70),   # A
-    ("adcfft_80dbpwlnoise.txt", "injected 80 dB",      80),   # B
-    ("adcfft_90dbpwlnoise.txt", "injected 90 dB",      90),   # C
-    ("adcfft_1151002a.txt",      "baseline (no noise)", None), # D
+    ("adcfft_withnoise_1151005.txt", "with .trannoise",    None),
+    ("adcfft_nonoise_1151006.txt",   "without .trannoise", None),
 ]
-REF = -1                   # index of the reference run (-1 = the last one = baseline)
+REF = -1                   # index of the reference run
 FS      = 12e6
 OSR     = 256
 SKIP    = 200
-N       = 16384            # same N / FIN for ALL files:  N=16384 -> M=5, FIN=3662.109375
-FIN     = 3662.109375      #                              N=32768 -> M=7, FIN=2563.4765625
+OUT     = "fft_compare_noise_vs_nonoise_32768.png"
+N       = 32768            # M=7
+FIN     = 2563.4765625
 WINDOW  = "bh"             # bh | hann
 BW      = None             # None = FS/(2*OSR) = 23437.5;  e.g. 24300
 THRESH  = None             # None = auto (two-rail voltage -> 0.9 V)
@@ -29,7 +28,7 @@ sys.path.insert(0, here)
 import dsm_compare
 
 args = [f for f, _, _ in FILES] + [str(FS), str(OSR),
-        "--labels", ",".join(l for _, l, _ in FILES), "--ref", str(REF)]
+        "--labels", ",".join(l for _, l, _ in FILES), "--ref", str(REF), "--out", OUT]
 if any(i is not None for _, _, i in FILES):
     args += ["--inject", ",".join("-" if i is None else str(i) for _, _, i in FILES)]
 opts = ["--skip", str(SKIP), "--n", str(N), "--fin", str(FIN), "--window", WINDOW]

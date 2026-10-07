@@ -10,7 +10,7 @@ Usage: python dsm_compare.py fileA fileB [fileC ...] [fs OSR] [options] [dsm_fft
 
 All other options (--skip, --n, --fin, --thresh, --window, --bw, --nharm, ...) go to dsm_fft.py and are
 applied to EVERY file, so the runs are analysed identically (use the same N and fin).
-Output: fft_compare.png and a metrics table.
+Output: fft_compare.png (or --out name.png) and a metrics table.
 """
 import os
 import runpy
@@ -48,12 +48,17 @@ def main(argv):
     if len(files) < 2:
         sys.exit(__doc__)
     labels, ref, inject, rest, i = None, -1, None, [], 0
+    global OUT
+    OUT = "fft_compare.png"
     while i < len(argv):
         if argv[i] == "--labels":
             labels = [t.strip() for t in argv[i + 1].split(",")]
             i += 2
         elif argv[i] == "--ref":
             ref = int(argv[i + 1])
+            i += 2
+        elif argv[i] == "--out":
+            OUT = argv[i + 1]
             i += 2
         elif argv[i] == "--inject":
             inject = [None if t.strip() in ("-", "", "none") else float(t) for t in argv[i + 1].split(",")]
@@ -173,7 +178,7 @@ def main(argv):
     side.text(0.0, 0.22, note, transform=side.transAxes, ha="left", va="top", fontsize=7.5,
               family="monospace")
     plt.tight_layout()
-    out = "fft_compare.png"
+    out = OUT
     plt.savefig(out, dpi=110)
     print(f"saved {out}")
     if inject is not None:
