@@ -7,7 +7,7 @@ import sys
 # ---------------- settings ----------------
 # (file, label, injected SNR = None).  The reference run is the one at REF (-1 = last = without noise).
 FILES = [
-    ("adcfft_withnoise_1151005.txt", "with .trannoise",    None),
+    ("adcfft_withnoise32768_1151012.txt", "with .trannoise (no seed)", None),
     ("adcfft_nonoise_1151006.txt",   "without .trannoise", None),
 ]
 REF = -1                   # index of the reference run
