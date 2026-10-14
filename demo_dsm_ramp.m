@@ -7,9 +7,11 @@ fs   = 12e6;               % modulator clock
 fc   = 10e3;               % decimator passband edge
 Tr   = 50e-3;              % ramp duration [s]
 N    = round(Tr*fs);
-Vlo  = -0.8;  Vhi = 0.8;   % ramp span (fraction of full scale)
+Vcm  = 0.75;  Vamp = 0.15; % ramp = Vcm +/- Vamp  [V]  (0.6 V -> 0.9 V)
+Vfs  = 0.75;               % ASSUMED full scale: modulator +/-1 <-> Vcm +/- Vfs (e.g. VDD = 1.5 V); edit to match your design
 
-u = linspace(Vlo, Vhi, N).';           % ideal ramp input
+Vin = linspace(Vcm-Vamp, Vcm+Vamp, N).';   % ideal ramp [V]
+u   = (Vin - Vcm) / Vfs;                   % normalized to +/-1 FS (here -0.2 .. +0.2)
 
 % 2nd-order modulator (same structure as demo_dsm_test.m)
 bits = zeros(N,1);  i1 = 0;  i2 = 0;  v = 0;
