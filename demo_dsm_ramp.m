@@ -53,7 +53,6 @@ figure;
 subplot(3,1,1); plot((0:N-1)/fs*1e3, u); grid on;
 xlabel('t [ms]'); ylabel('input [FS]'); title('Ramp input');
 subplot(3,1,2); plot(ui, yi, ui, polyval(c,ui), '--'); grid on;
-xlabel('input [FS]'); ylabel('output [FS]'); legend('decimated','best fit','Location','best');
-subplot(3,1,3); plot(ui, err); grid on;
-xlabel('input [FS]'); ylabel('INL [FS]'); % 1 LSB = 2^-15 FS
- title('Residual vs best-fit line (includes quantization/idle-tone noise)');
+xlabel('input [FS]'); ylabel('output [FS]  (x32768 = LSB)'); legend('decimated','best fit','Location','best');
+subplot(3,1,3); plot(ui, err/LSB); grid on;
+xlabel('input [FS]'); ylabel('INL [LSB]'); title('Residual vs best-fit line (includes quantization/idle-tone noise)');
