@@ -5,7 +5,7 @@ clear; clc;
 
 fs   = 12e6;               % modulator clock
 fc   = 10e3;               % decimator passband edge
-Tr   = 50e-3;              % ramp duration [s]
+Tr   = 4;                 % ramp duration [s]; need >~10 output samples per code for DNL (see below)
 N    = round(Tr*fs);
 Vcm  = 0.75;  Vamp = 0.15; % ramp = Vcm +/- Vamp  [V]  (0.6 V -> 0.9 V)
 Vfs  = 0.75;               % ASSUMED full scale: modulator +/-1 <-> Vcm +/- Vfs (e.g. VDD = 1.5 V); edit to match your design
@@ -37,7 +37,7 @@ tOut = (0:numel(y)-1).' / fsOut - dly;
 uIdeal = interp1((0:N-1).'/fs, u, tOut, 'linear', NaN);
 
 % Drop filter start-up/edge samples, then best-fit line
-ok = ~isnan(uIdeal) & tOut > 2e-3 & tOut < Tr - 2e-3;
+ok = ~isnan(uIdeal) & tOut > 5e-3 & tOut < Tr - 5e-3;
 ui = uIdeal(ok);  yi = y(ok);
 c  = polyfit(ui, yi, 1);
 gain = c(1);  offs = c(2);
@@ -49,10 +49,36 @@ LSB = 2^-(NB-1);
 fprintf('INL peak = %.3e FS = %.1f LSB (16-bit)\n', max(abs(err)), max(abs(err))/LSB);
 fprintf('INL rms  = %.3e FS = %.2f LSB\n', std(err), std(err)/LSB);
 
+% Smoothed INL: average out wideband noise so only the static nonlinearity remains
+errS = movmean(err, 481);                      % ~10 ms @ 48 kHz
+fprintf('INL (smoothed) peak = %.2f LSB, noise rms (err - smoothed) = %.2f LSB\n', ...
+        max(abs(errS))/LSB, std(err-errS)/LSB);
+
+% ---- DNL / missing codes by code-density (histogram of the ramp) ----
+% Only codes the fitted line spans (minus a margin) are evaluated.
+cc   = round(yi/LSB);                          % integer output codes
+cLo  = min(cc) + 50;  cHi = max(cc) - 50;      % skip edge codes (ramp start/stop)
+codes = (cLo:cHi).';
+cnt  = accumarray(cc(cc>=cLo & cc<=cHi) - cLo + 1, 1, [numel(codes) 1]);
+hitsPerCode = mean(cnt);
+DNL  = cnt/hitsPerCode - 1;                    % LSB
+INLh = cumsum(DNL);  INLh = INLh - polyval(polyfit(codes, INLh, 1), codes);
+nMiss = sum(cnt == 0);
+fprintf('Codes evaluated: %d..%d (%d), mean hits/code = %.1f\n', cLo, cHi, numel(codes), hitsPerCode);
+fprintf('DNL: min %.2f, max %.2f LSB;  INL (from DNL) peak %.2f LSB\n', min(DNL), max(DNL), max(abs(INLh)));
+fprintf('Missing codes (DNL = -1): %d  (%.2f %%)\n', nMiss, 100*nMiss/numel(codes));
+if hitsPerCode < 10
+    warning('Only %.1f hits/code: DNL/missing-code result is unreliable. Increase Tr.', hitsPerCode);
+end
+% Note: the decimated output carries >1 LSB of shaped noise, which acts as
+% dither and smears code widths, so DNL here is optimistic vs. a noise-free ADC.
+
 figure;
-subplot(3,1,1); plot((0:N-1)/fs*1e3, u); grid on;
+subplot(4,1,1); plot((0:N-1)/fs*1e3, u); grid on;
 xlabel('t [ms]'); ylabel('input [FS]'); title('Ramp input');
-subplot(3,1,2); plot(ui, yi, ui, polyval(c,ui), '--'); grid on;
+subplot(4,1,2); plot(ui, yi, ui, polyval(c,ui), '--'); grid on;
 xlabel('input [FS]'); ylabel('output [FS]  (x32768 = LSB)'); legend('decimated','best fit','Location','best');
-subplot(3,1,3); plot(ui, err/LSB); grid on;
-xlabel('input [FS]'); ylabel('INL [LSB]'); title('Residual vs best-fit line (includes quantization/idle-tone noise)');
+subplot(4,1,3); plot(ui, err/LSB, ui, errS/LSB, 'LineWidth', 1); grid on;
+xlabel('input [FS]'); ylabel('INL [LSB]'); title('INL: residual vs best-fit line (raw and smoothed)');
+subplot(4,1,4); plot(codes, DNL); grid on;
+xlabel('output code'); ylabel('DNL [LSB]'); title(sprintf('DNL (code density), %d missing codes', nMiss));
