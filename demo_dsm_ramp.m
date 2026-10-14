@@ -25,6 +25,11 @@ end
 % Decimate: 12 MHz -> /125 -> 96 kHz -> /2 -> 48 kHz
 [y, fsOut] = dsm_decimate(bits, fs, fc);
 
+% 16-bit signed output: codes -32768 .. +32767 (1 LSB = Vfs/32768 = 22.9 uV)
+NB   = 16;
+code = max(min(round(y * 2^(NB-1)), 2^(NB-1)-1), -2^(NB-1));
+y    = code / 2^(NB-1);                        % back to FS units for the analysis below
+
 % Align: group delay of CIC (4*(R1-1)/2 samples @fs) + FIR (80 samples @96k)
 R1 = 125;  R2 = 2;
 dly = (4*(R1-1)/2)/fs + 80/(fs/R1);            % seconds
@@ -40,9 +45,9 @@ err  = yi - polyval(c, ui);                    % INL in FS units (output vs fit)
 
 fprintf('Gain = %.5f  (error %.3f %%)\n', gain, 100*(gain-1));
 fprintf('Offset = %.3e FS\n', offs);
-fprintf('INL peak = %.3e FS (= %.1f LSB @ 12 bit, %.1f LSB @ 16 bit)\n', ...
-        max(abs(err)), max(abs(err))*2^11, max(abs(err))*2^15);
-fprintf('INL rms  = %.3e FS\n', std(err));
+LSB = 2^-(NB-1);
+fprintf('INL peak = %.3e FS = %.1f LSB (16-bit)\n', max(abs(err)), max(abs(err))/LSB);
+fprintf('INL rms  = %.3e FS = %.2f LSB\n', std(err), std(err)/LSB);
 
 figure;
 subplot(3,1,1); plot((0:N-1)/fs*1e3, u); grid on;
@@ -50,4 +55,5 @@ xlabel('t [ms]'); ylabel('input [FS]'); title('Ramp input');
 subplot(3,1,2); plot(ui, yi, ui, polyval(c,ui), '--'); grid on;
 xlabel('input [FS]'); ylabel('output [FS]'); legend('decimated','best fit','Location','best');
 subplot(3,1,3); plot(ui, err); grid on;
-xlabel('input [FS]'); ylabel('INL [FS]'); title('Residual vs best-fit line (includes quantization/idle-tone noise)');
+xlabel('input [FS]'); ylabel('INL [FS]'); % 1 LSB = 2^-15 FS
+ title('Residual vs best-fit line (includes quantization/idle-tone noise)');
