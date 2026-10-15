@@ -2,7 +2,7 @@
 """Ramp test of a 1-bit delta-sigma ADC (gain / offset / INL / DNL / missing codes).
 
   python dsm_ramp.py sim    [--tr 4] [--fs 12e6]          behavioural 2nd-order DSM + ramp
-  python dsm_ramp.py hspice ramp.csv [--vfsd 1.5]         HSPICE csv: time, v(qout), v(vip), v(vin)
+  python dsm_ramp.py hspice ramp.csv [--vfsd 1.5]         HSPICE table: 4 columns time,v(qout),v(vip),v(vin) or 1 column v(qout) per clock
 
 Requires numpy, scipy, matplotlib (numba optional, speeds up the modulator ~100x).
 Full scale: +/-1 <-> Vcm +/- VFS (sim) or (vip-vin) = +/-VFSD (hspice); 16-bit signed output.
@@ -133,20 +133,40 @@ def run_sim(a):
                    fig_title=f"Behavioural 2nd-order DSM, fs={fs / 1e6:g} MHz")
 
 
+def load_table(path):
+    """Rows of numbers from a CSV/WaveView text table; header/label lines are skipped."""
+    rows = []
+    with open(path) as f:
+        for line in f:
+            try:
+                rows.append([float(v) for v in line.replace(",", " ").split()])
+            except ValueError:
+                continue
+    n = max(len(r) for r in rows)
+    return np.array([r for r in rows if len(r) == n])
+
+
 def run_hspice(a):
-    d = np.genfromtxt(a.csv, delimiter=",", comments=None, invalid_raise=False)
-    d = d[np.all(np.isfinite(d[:, :4]), axis=1)][:, :4]
-    t, d = np.unique(d[:, 0], return_index=True)[0], d[np.unique(d[:, 0], return_index=True)[1]]
+    d = load_table(a.csv)
     tck = 1.0 / a.fs
-    ts = np.arange(a.tsamp, t[-1], tck)
-    ts = ts[ts >= t[0]]
-    bits = np.where(np.interp(ts, t, d[:, 1]) > a.vth, 1.0, -1.0)
-    u = np.interp(ts, t, d[:, 2] - d[:, 3]) / a.vfsd
+    if d.shape[1] == 1:
+        # single column v(qout), one sample per clock (.tran 'tck' ... start='tck'):
+        # input is the known linear ramp of the netlist
+        bits = np.where(d[:, 0] > a.vth, 1.0, -1.0)
+        ts = (np.arange(bits.size) + 1) * tck
+        u = (a.vd0 + (a.vd1 - a.vd0) * ts / a.tramp) / a.vfsd
+    else:
+        t, i = np.unique(d[:, 0], return_index=True)
+        d = d[i]
+        ts = np.arange(a.tsamp, t[-1], tck)
+        ts = ts[ts >= t[0]]
+        bits = np.where(np.interp(ts, t, d[:, 1]) > a.vth, 1.0, -1.0)
+        u = np.interp(ts, t, d[:, 2] - d[:, 3]) / a.vfsd
     y, idx, dly = sinc3(bits, a.fs, a.r)
     ui = np.interp(ts[idx] - dly, ts, u)
     keep = np.arange(y.size) > 4
-    print(f"R={a.r}, fout={a.fs / a.r / 1e3:.1f} kHz, VfsD={a.vfsd} V assumed "
-          "(wrong VfsD only scales gain). Too few points for DNL.")
+    print(f"{bits.size} bits, R={a.r}, fout={a.fs / a.r / 1e3:.1f} kHz, VfsD={a.vfsd} V assumed "
+          f"(wrong VfsD only scales gain), mean bit = {bits.mean():+.4f}. Too few points for DNL.")
     return analyze(ui[keep], y[keep], dnl=False, fig_title="HSPICE ramp (sinc3)")
 
 
@@ -167,6 +187,9 @@ def main():
     a2.add_argument("--vth", type=float, default=0.9)
     a2.add_argument("--vfsd", type=float, default=1.5)
     a2.add_argument("--r", type=int, default=128)
+    a2.add_argument("--vd0", type=float, default=0.0, help="1-column input: diff at t=0 [V]")
+    a2.add_argument("--vd1", type=float, default=0.3, help="1-column input: diff at t=tramp [V]")
+    a2.add_argument("--tramp", type=float, default=1e-3)
     a = p.parse_args()
     import matplotlib.pyplot as plt
     (run_sim if a.cmd == "sim" else run_hspice)(a)
