@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Python port of noisemean.m: noise (in LSB) of the 1-bit DSM ADC at fixed input.
 
-  python noisemean.py [meannoise.txt] [--fs 12.288e6] [--osr 64] [--vth 0.9] [--lsb-fs 32768]
+  python noisemean.py [meannoise.txt] [--fs 12.288e6] [--osr 256] [--vth 0.9] [--lsb-fs 32768]
 
 meannoise.txt : 1-bit modulator output (0 / 1.8 V), one sample per line, rate fs.
 Decimation    : sinc3 (3 integrators @fs, decimate by OSR, 3 combs), same as deci_hspice.mdl.
@@ -27,7 +27,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("file", nargs="?", default="meannoise.txt")
     p.add_argument("--fs", type=float, default=6144000 * 2)
-    p.add_argument("--osr", type=int, default=64)
+    p.add_argument("--osr", type=int, default=256)
     p.add_argument("--vth", type=float, default=0.9, help="1-bit slicing threshold [V]")
     p.add_argument("--lsb-fs", type=float, default=32768, help="LSBs per full scale (+/-1)")
     p.add_argument("--vfsd", type=float, default=1.5, help="differential full scale [V]")
