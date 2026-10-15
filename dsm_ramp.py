@@ -226,8 +226,9 @@ def main():
     import sys
     if len(sys.argv) == 1:                  # no arguments (e.g. run from an IDE): analyze the ramp file
         here = os.path.dirname(os.path.abspath(__file__))
-        f = os.path.join(here, "af6859ramp1ms.txt")
-        sys.argv += ["hspice", f] if os.path.exists(f) else ["sim", "--tr", "0.5"]
+        cands = [os.path.join(d, "af6859ramp1ms.txt") for d in (os.getcwd(), here)]
+        f = next((c for c in cands if os.path.exists(c)), None)
+        sys.argv += ["hspice", f] if f else ["sim", "--tr", "0.5"]
     a = p.parse_args()
     import matplotlib.pyplot as plt
     (run_sim if a.cmd == "sim" else run_hspice)(a)
