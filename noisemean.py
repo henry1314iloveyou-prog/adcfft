@@ -5,8 +5,8 @@
 
 meannoise.txt : 1-bit modulator output (0 / 1.8 V), one sample per line, rate fs.
 Decimation    : sinc3 (3 integrators @fs, decimate by OSR, 3 combs), same as deci_hspice.mdl.
-Output code   : 16-bit signed, bit = +/-1 -> +/-32768 LSB (differential +/-VFSD = +/-1.5 V,
-                Vcm = 0.75 V, so 1 LSB = VFSD/32768).
+Output code   : 16-bit signed, bit = +/-1 -> +/-32768 LSB (differential +/-VFSD = +/-0.375 V (Vref = 1.5/16*4),
+                Vcm = 0.75 V, so 1 LSB = 0.375 V/32768 = 11.4 uV).
 """
 import argparse
 import numpy as np
@@ -61,7 +61,7 @@ def main():
     p.add_argument("--osr", type=int, default=256)
     p.add_argument("--vth", type=float, default=0.9, help="1-bit slicing threshold [V]")
     p.add_argument("--lsb-fs", type=float, default=32768, help="LSBs per full scale (+/-1)")
-    p.add_argument("--vfsd", type=float, default=1.5, help="differential full scale [V]")
+    p.add_argument("--vfsd", type=float, default=0.375, help="differential full scale [V]")
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
     p.add_argument("--dc-bins", type=int, default=1, help="lowest FFT bins excluded from noise (default 1 = DC only)")
     p.add_argument("--tone", action="store_true", help="input is a sine: find the tone and quote SNR vs that tone")
