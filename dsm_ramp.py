@@ -134,34 +134,49 @@ def run_sim(a):
 
 
 def load_table(path):
-    """Rows of numbers from a CSV/WaveView text table; header/label lines are skipped."""
-    rows = []
+    """Numeric rows of a CSV/WaveView text table (header lines skipped) and the
+    signal names found in the header, e.g. ['v(vin)', 'v(vip)', 'v(qout)']."""
+    rows, names = [], []
     with open(path) as f:
         for line in f:
             try:
                 rows.append([float(v) for v in line.replace(",", " ").split()])
             except ValueError:
-                continue
+                names += [w.split(":")[0].lower() for w in line.replace(",", " ").split()
+                          if w.lower().startswith("v(")]
     n = max(len(r) for r in rows)
-    return np.array([r for r in rows if len(r) == n])
+    return np.array([r for r in rows if len(r) == n]), names
 
 
 def run_hspice(a):
-    d = load_table(a.csv)
+    d, names = load_table(a.csv)
     tck = 1.0 / a.fs
-    if d.shape[1] == 1:
-        # single column v(qout), one sample per clock (.tran 'tck' ... start='tck'):
-        # input is the known linear ramp of the netlist
-        bits = np.where(d[:, 0] > a.vth, 1.0, -1.0)
-        ts = (np.arange(bits.size) + 1) * tck
-        u = (a.vd0 + (a.vd1 - a.vd0) * ts / a.tramp) / a.vfsd
-    else:
-        t, i = np.unique(d[:, 0], return_index=True)
-        d = d[i]
+    ncol = d.shape[1]
+    if ncol == 4 and not names:
+        names = ["time", "v(qout)", "v(vip)", "v(vin)"]
+    elif ncol == 1:
+        names = ["v(qout)"]
+    elif ncol < 4 and len(names) != ncol:
+        names = (["time"] + names)[:ncol] if len(names) == ncol - 1 else names
+    col = {n: i for i, n in enumerate(names)}
+    q = d[:, col["v(qout)"]]
+    if "time" in col:
+        t, i = np.unique(d[:, col["time"]], return_index=True)
+        d, q = d[i], q[i]
         ts = np.arange(a.tsamp, t[-1], tck)
         ts = ts[ts >= t[0]]
-        bits = np.where(np.interp(ts, t, d[:, 1]) > a.vth, 1.0, -1.0)
-        u = np.interp(ts, t, d[:, 2] - d[:, 3]) / a.vfsd
+        bits = np.where(np.interp(ts, t, q) > a.vth, 1.0, -1.0)
+        vd = np.interp(ts, t, d[:, col["v(vip)"]] - d[:, col["v(vin)"]])
+    else:
+        # one row per clock (.tran 'tck' ... start='tck'): no time column
+        bits = np.where(q > a.vth, 1.0, -1.0)
+        ts = (np.arange(bits.size) + 1) * tck
+        if "v(vip)" in col and "v(vin)" in col:
+            vd = d[:, col["v(vip)"]] - d[:, col["v(vin)"]]
+        else:
+            vd = a.vd0 + (a.vd1 - a.vd0) * ts / a.tramp      # known netlist ramp
+    u = vd / a.vfsd
+    print(f"columns: {names}; diff input {vd[0]:.4f} -> {vd[-1]:.4f} V")
     y, idx, dly = sinc3(bits, a.fs, a.r)
     ui = np.interp(ts[idx] - dly, ts, u)
     keep = np.arange(y.size) > 4
@@ -185,7 +200,7 @@ def main():
     a2.add_argument("--fs", type=float, default=12e6)
     a2.add_argument("--tsamp", type=float, default=100e-12 + 0.75 / 12e6)
     a2.add_argument("--vth", type=float, default=0.9)
-    a2.add_argument("--vfsd", type=float, default=1.5)
+    a2.add_argument("--vfsd", type=float, default=0.375, help="diff full scale [V] = Vref = VLDOA/16*4")
     a2.add_argument("--r", type=int, default=128)
     a2.add_argument("--vd0", type=float, default=0.0, help="1-column input: diff at t=0 [V]")
     a2.add_argument("--vd1", type=float, default=0.3, help="1-column input: diff at t=tramp [V]")
