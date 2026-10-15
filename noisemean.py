@@ -52,13 +52,11 @@ def main():
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    fig, ax = plt.subplots(2, 1, figsize=(8, 6))
-    ax[0].plot(code - z, lw=0.7)
-    ax[0].set(xlabel="output sample", ylabel="LSB (mean removed)", title=f"std = {sd:.2f} LSB")
-    ax[1].hist(code - z, bins=np.arange(-0.5, 0.5 + np.ptp(code), 1) + np.floor(np.min(code - z)))
-    ax[1].set(xlabel="LSB (mean removed)", ylabel="count")
-    for x in ax:
-        x.grid(True)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(code, lw=0.7)
+    ax.set(xlabel="output sample", ylabel="output code [LSB]",
+           ylim=(-a.lsb_fs, a.lsb_fs), title=f"mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})")
+    ax.grid(True)
     fig.tight_layout()
     fig.savefig(a.out, dpi=120)
     print("saved", a.out)
