@@ -38,14 +38,14 @@ def spectrum(x, fs, dc_bins=3):
     return f, P, enbw
 
 
-def snr_from_spectrum(f, P, enbw, dc_bins=3, tone_db=15.0, tone_halfwidth=2):
+def snr_from_spectrum(f, P, enbw, dc_bins=3, tone_db=20.0, tone_halfwidth=2, find_tone=False):
     """If a tone stands >= tone_db above the median noise bin, SNR = tone power / rest.
     Otherwise (DC input) SNR is quoted against a full-scale sine (power 0.5)."""
     Pn = P.copy()
     Pn[:dc_bins] = 0
     k = int(np.argmax(Pn))
     med = np.median(Pn[dc_bins:])
-    has_tone = Pn[k] > med * 10 ** (tone_db / 10)
+    has_tone = find_tone and Pn[k] > med * 10 ** (tone_db / 10)
     if has_tone:
         lo, hi = max(k - tone_halfwidth, dc_bins), k + tone_halfwidth + 1
         sig = Pn[lo:hi].sum() / enbw
@@ -64,6 +64,7 @@ def main():
     p.add_argument("--vfsd", type=float, default=1.5, help="differential full scale [V]")
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
     p.add_argument("--dc-bins", type=int, default=1, help="lowest FFT bins excluded from noise (default 1 = DC only)")
+    p.add_argument("--tone", action="store_true", help="input is a sine: find the tone and quote SNR vs that tone")
     p.add_argument("--out", default="noise_lsb", help="output basename (.png and .pdf added)")
     p.add_argument("--no-show", dest="show", action="store_false",
                    help="do not open the interactive matplotlib window (default: open)")
@@ -96,7 +97,7 @@ def main():
     # ---- spectrum / SNR of the decimated output (full scale = 1.0) ----
     u = code / a.lsb_fs
     f, P, enbw = spectrum(u, fs4)
-    tone, ftone, sig, noise = snr_from_spectrum(f, P, enbw, dc_bins=a.dc_bins)
+    tone, ftone, sig, noise = snr_from_spectrum(f, P, enbw, dc_bins=a.dc_bins, find_tone=a.tone)
     snr = 10 * np.log10(sig / noise)
     if tone:
         print(f"Tone found at {ftone / 1e3:.2f} kHz: SNR = {snr:.2f} dB (tone vs all other bins, DC excluded)")
