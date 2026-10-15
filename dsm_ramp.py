@@ -66,7 +66,7 @@ def sinc3(bits, fs, r=128, order=3):
     return y[idx], idx, order * (r - 1) / 2 / fs
 
 
-def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title=""):
+def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title="", vcm=0.75):
     """u_ideal, y in FS units at equal time instants. Prints results, returns dict."""
     code = np.clip(np.round(y / LSB), -2 ** (NB - 1), 2 ** (NB - 1) - 1)
     yq = code * LSB
@@ -128,7 +128,43 @@ def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title=""):
     for a_ in ax:
         a_.grid(True)
     fig.tight_layout()
+    add_cursor(fig, ax[:2], mv, code, err / LSB, uv_lsb, vcm=vcm)
     return res
+
+
+def add_cursor(fig, axes, mv, code, inl, uv_lsb, vcm=0.75):
+    """Click in the top/middle plot (or press left/right arrows) to read out a point:
+    input diff [mV] with vip/vin [V], output code, INL [LSB] and [uV]."""
+    st = {"i": 0, "art": []}
+
+    def show(i):
+        i = int(np.clip(i, 0, mv.size - 1))
+        st["i"] = i
+        for art in st["art"]:
+            art.remove()
+        st["art"] = []
+        vip, vin = vcm + mv[i] / 2e3, vcm - mv[i] / 2e3
+        txt = (f"#{i}: diff {mv[i]:.2f} mV  (vip {vip:.4f} V, vin {vin:.4f} V)\n"
+               f"code {code[i]:+.0f}   INL {inl[i]:+.2f} LSB = {inl[i] * uv_lsb:+.1f} uV")
+        for ax, yv in zip(axes, (code[i], inl[i])):
+            st["art"] += [ax.axvline(mv[i], color="r", lw=0.8, ls=":"),
+                          ax.plot(mv[i], yv, "ro", ms=5)[0]]
+        st["art"].append(axes[1].annotate(
+            txt, (mv[i], inl[i]), xytext=(10, -42), textcoords="offset points", fontsize=8,
+            bbox=dict(boxstyle="round", fc="w", ec="r"), arrowprops=dict(arrowstyle="->", color="r")))
+        fig.canvas.draw_idle()
+
+    def on_click(ev):
+        if ev.inaxes in axes and ev.xdata is not None:
+            show(np.argmin(np.abs(mv - ev.xdata)))
+
+    def on_key(ev):
+        if ev.key in ("left", "right"):
+            show(st["i"] + (1 if ev.key == "right" else -1))
+
+    fig.canvas.mpl_connect("button_press_event", on_click)
+    fig.canvas.mpl_connect("key_press_event", on_key)
+    fig._cursor_show = show            # for testing / scripting
 
 
 def run_sim(a):
