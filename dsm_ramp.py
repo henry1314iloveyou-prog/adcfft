@@ -17,6 +17,8 @@ except ImportError:                       # slow pure-python fallback
     def njit(f):
         return f
 
+# IDE users: set this to your data file (used when the script is run without arguments)
+DATA_FILE = "af6859ramp1ms.txt"
 NB = 16
 LSB = 2.0 ** -(NB - 1)
 
@@ -224,11 +226,15 @@ def main():
         sp.add_argument("--save", help="save the figure to this file instead of showing it")
     import os
     import sys
-    if len(sys.argv) == 1:                  # no arguments (e.g. run from an IDE): analyze the ramp file
-        here = os.path.dirname(os.path.abspath(__file__))
-        cands = [os.path.join(d, "af6859ramp1ms.txt") for d in (os.getcwd(), here)]
+    if not {"sim", "hspice"} & set(sys.argv[1:]):
+        # No subcommand (e.g. run from an IDE, whose argv may carry extra junk): use defaults.
+        try:
+            here = os.path.dirname(os.path.abspath(__file__))
+        except NameError:
+            here = os.getcwd()
+        cands = [DATA_FILE, os.path.join(os.getcwd(), DATA_FILE), os.path.join(here, DATA_FILE)]
         f = next((c for c in cands if os.path.exists(c)), None)
-        sys.argv += ["hspice", f] if f else ["sim", "--tr", "0.5"]
+        sys.argv = sys.argv[:1] + (["hspice", f] if f else ["sim", "--tr", "0.5"])
     a = p.parse_args()
     import matplotlib.pyplot as plt
     (run_sim if a.cmd == "sim" else run_hspice)(a)
