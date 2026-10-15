@@ -202,7 +202,7 @@ def run_hspice(a):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
-    s = p.add_subparsers(dest="cmd", required=True)
+    s = p.add_subparsers(dest="cmd")
     a1 = s.add_parser("sim")
     a1.add_argument("--fs", type=float, default=12e6)
     a1.add_argument("--fc", type=float, default=10e3)
@@ -222,6 +222,12 @@ def main():
     a2.add_argument("--tramp", type=float, default=1e-3)
     for sp in (a1, a2):
         sp.add_argument("--save", help="save the figure to this file instead of showing it")
+    import os
+    import sys
+    if len(sys.argv) == 1:                  # no arguments (e.g. run from an IDE): analyze the ramp file
+        here = os.path.dirname(os.path.abspath(__file__))
+        f = os.path.join(here, "af6859ramp1ms.txt")
+        sys.argv += ["hspice", f] if os.path.exists(f) else ["sim", "--tr", "0.5"]
     a = p.parse_args()
     import matplotlib.pyplot as plt
     (run_sim if a.cmd == "sim" else run_hspice)(a)
