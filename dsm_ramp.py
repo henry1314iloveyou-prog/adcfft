@@ -156,17 +156,29 @@ def run_hspice(a):
         names = ["time", "v(qout)", "v(vip)", "v(vin)"]
     elif ncol == 1:
         names = ["v(qout)"]
-    elif ncol < 4 and len(names) != ncol:
-        names = (["time"] + names)[:ncol] if len(names) == ncol - 1 else names
+    elif len(names) == ncol - 1:
+        names = ["time"] + names                     # WaveView TIME column has no v(...) label
     col = {n: i for i, n in enumerate(names)}
     q = d[:, col["v(qout)"]]
     if "time" in col:
         t, i = np.unique(d[:, col["time"]], return_index=True)
         d, q = d[i], q[i]
-        ts = np.arange(a.tsamp, t[-1], tck)
-        ts = ts[ts >= t[0]]
-        bits = np.where(np.interp(ts, t, q) > a.vth, 1.0, -1.0)
-        vd = np.interp(ts, t, d[:, col["v(vip)"]] - d[:, col["v(vin)"]])
+        if abs(np.median(np.diff(t)) / tck - 1) < 0.01:
+            # already one sample per clock: use the file's own sample instants
+            ts = t
+            bits = np.where(q > a.vth, 1.0, -1.0)
+            vd = d[:, col["v(vip)"]] - d[:, col["v(vin)"]]
+            if "v(clk_adcin)" in col:
+                clk = d[:, col["v(clk_adcin)"]]
+                ph = (ts % tck) / tck
+                print(f"clk_adcin at samples: {np.mean(clk > 0.9):.1%} high; sample phase "
+                      f"{ph.min():.3f}..{ph.max():.3f} of tck; qout in transition at samples: "
+                      f"{np.mean((q > 0.2) & (q < 1.6)):.2%}")
+        else:
+            ts = np.arange(a.tsamp, t[-1], tck)
+            ts = ts[ts >= t[0]]
+            bits = np.where(np.interp(ts, t, q) > a.vth, 1.0, -1.0)
+            vd = np.interp(ts, t, d[:, col["v(vip)"]] - d[:, col["v(vin)"]])
     else:
         # one row per clock (.tran 'tck' ... start='tck'): no time column
         bits = np.where(q > a.vth, 1.0, -1.0)
