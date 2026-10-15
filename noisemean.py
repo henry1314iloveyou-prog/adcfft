@@ -33,9 +33,10 @@ def main():
     p.add_argument("--vfsd", type=float, default=1.5, help="differential full scale [V]")
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
     p.add_argument("--out", default="noise_lsb", help="output basename (.png and .pdf added)")
-    p.add_argument("--show", action="store_true", help="open interactive matplotlib window")
+    p.add_argument("--show", action=argparse.BooleanOptionalAction, default=True,
+                   help="open interactive matplotlib window (default on; --no-show to disable)")
     p.add_argument("--open", metavar="PKL", help="open a saved .fig.pkl in an interactive matplotlib window")
-    a = p.parse_args()
+    a, _ = p.parse_known_args()        # tolerant of IDE-injected argv
     if a.open:
         import pickle
         import matplotlib.pyplot as plt
@@ -43,6 +44,9 @@ def main():
         plt.show()
         return
 
+    import os
+    if not os.path.exists(a.file):          # IDEs often run with a different cwd
+        a.file = os.path.join(os.path.dirname(os.path.abspath(__file__)), a.file)
     raw = np.loadtxt(a.file)
     bits = np.where(raw > a.vth, 1, -1)
     y = sinc3_decimate(bits, a.osr)
