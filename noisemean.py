@@ -11,6 +11,11 @@ Output code   : 16-bit signed, bit = +/-1 -> +/-32768 LSB (differential +/-VFSD 
 import argparse
 import numpy as np
 
+# ---- settings for IDE use: edit here and press Run ----
+OSR = 256            # sinc3 decimation ratio
+FS = 6144000 * 2     # modulator clock [Hz]
+VFSD = 0.375         # differential full scale [V] (= Vref = 1.5/16*4)
+
 
 def sinc3_decimate(bits, osr, order=3):
     """CIC (integrate @fs, decimate, comb) with exact integer arithmetic; DC gain normalised to 1."""
@@ -26,11 +31,11 @@ def sinc3_decimate(bits, osr, order=3):
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     p.add_argument("file", nargs="?", default="meannoise.txt")
-    p.add_argument("--fs", type=float, default=6144000 * 2)
-    p.add_argument("--osr", type=int, default=256)
+    p.add_argument("--fs", type=float, default=FS)
+    p.add_argument("--osr", type=int, default=OSR)
     p.add_argument("--vth", type=float, default=0.9, help="1-bit slicing threshold [V]")
     p.add_argument("--lsb-fs", type=float, default=32768, help="LSBs per full scale (+/-1)")
-    p.add_argument("--vfsd", type=float, default=0.375, help="differential full scale [V]")
+    p.add_argument("--vfsd", type=float, default=VFSD, help="differential full scale [V]")
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
     p.add_argument("--out", default="noise_lsb", help="output basename (.png and .pdf added)")
     p.add_argument("--no-show", dest="show", action="store_false",
