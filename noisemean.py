@@ -14,6 +14,7 @@ import numpy as np
 # ---- settings for IDE use: edit here and press Run ----
 OSR = 256            # sinc3 decimation ratio
 FS = 6144000 * 2     # modulator clock [Hz]
+YLIM = 15            # initial plot range +/-YLIM LSB (zoom out with the toolbar)
 VFSD = 0.375         # differential full scale [V] (= Vref = 1.5/16*4)
 
 
@@ -72,7 +73,7 @@ def main():
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(code, lw=0.7)
-    ax.set(xlabel="output sample", ylabel="output code [LSB]", ylim=(-a.lsb_fs, a.lsb_fs),
+    ax.set(xlabel="output sample", ylabel="output code [LSB]", ylim=(-YLIM, YLIM),
            title=f"mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})")
     ax.grid(True)
     fig.tight_layout()
