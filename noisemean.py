@@ -74,7 +74,7 @@ def main():
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(code, lw=0.7)
     ax.set(xlabel="output sample", ylabel="output code [LSB]", ylim=(-YLIM, YLIM),
-           title=f"mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})")
+           title=f"OSR = {a.osr}, mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})")
     ax.grid(True)
     fig.tight_layout()
     fig.savefig(a.out + ".png", dpi=120)
