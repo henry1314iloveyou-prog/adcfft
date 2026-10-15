@@ -288,7 +288,7 @@ def run_hspice_files(a):
     y = np.mean([r[1] for r in runs], axis=0)
     if len(runs) > 1:
         print(f"averaged {len(runs)} runs")
-    return analyze(u, y, vfs=a.vfsd, dnl=False, fig_title=f"HSPICE ramp (sinc3), {len(runs)} run(s)")
+    return analyze(u, y, vfs=a.vfsd, dnl=False, fig_title=f"HSPICE ramp: sinc3 R={a.r} ({a.fs / a.r / 1e3:.1f} kHz out, {u.size} pts), {len(runs)} run(s)")
 
 
 def run_dc(a):
