@@ -135,47 +135,57 @@ def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title="", vcm=0.75):
 def add_cursor(fig, axes, mv, code, inl, uv_lsb, vcm=0.75):
     """Click in the top/middle plot (or press left/right arrows) to read out a point:
     input diff [mV] with vip/vin [V], output code, INL [LSB] and [uV].
-    The label sits on the top plot, can be dragged with the mouse; press 't' to move it
-    to the INL plot."""
-    st = {"i": 0, "art": [], "ann": None, "on": 0, "off": (15, 50)}
+    Both plots get a marker and a label (top: input/code, bottom: INL); each label can be
+    dragged with the mouse."""
+    def default_off(k, i):
+        """Label offset [points] that stays inside its plot: top plot has empty space above-left
+        and below-right of the rising line; the INL label goes on the side with more room."""
+        right = mv[i] > mv.min() + 0.6 * np.ptp(mv)
+        dx = -25 if right else 25
+        if k == 0:
+            return (dx, -55 if right else 35)
+        return (dx, 30 if inl[i] < 0 else -45)
+
+    st = {"i": 0, "art": [], "ann": [None, None], "off": [(0, 0), (0, 0)], "moved": [False, False]}
 
     def show(i):
         i = int(np.clip(i, 0, mv.size - 1))
         st["i"] = i
-        if st["ann"] is not None:
-            st["off"] = tuple(st["ann"].xyann)           # remember where the user dragged it
+        for k, ann in enumerate(st["ann"]):
+            if ann is not None and tuple(ann.xyann) != tuple(st["off"][k]):
+                st["off"][k] = tuple(ann.xyann)           # remember where the user dragged it
+                st["moved"][k] = True
         for art in st["art"]:
             art.remove()
         st["art"] = []
         vip, vin = vcm + mv[i] / 2e3, vcm - mv[i] / 2e3
-        txt = (f"#{i}: diff {mv[i]:.2f} mV  (vip {vip:.4f} V, vin {vin:.4f} V)\n"
-               f"code {code[i]:+.0f} LSB   INL {inl[i]:+.2f} LSB = {inl[i] * uv_lsb:+.1f} uV")
-        for ax, yv in zip(axes, (code[i], inl[i])):
+        txts = (f"#{i}: diff {mv[i]:.2f} mV\n(vip {vip:.4f} V, vin {vin:.4f} V)\n"
+                f"code {code[i]:+.0f} LSB",
+                f"#{i}: diff {mv[i]:.2f} mV\nINL {inl[i]:+.2f} LSB = {inl[i] * uv_lsb:+.1f} uV")
+        for k, (ax, yv) in enumerate(zip(axes, (code[i], inl[i]))):
+            off = st["off"][k] if st["moved"][k] else default_off(k, i)
+            right = off[0] < 0
+            st["off"][k] = off
+            ann = ax.annotate(
+                txts[k], (mv[i], yv), xytext=off, textcoords="offset points",
+                ha="right" if right else "left", fontsize=8, bbox=dict(boxstyle="round", fc="w", ec="r"),
+                arrowprops=dict(arrowstyle="->", color="r"))
+            ann.draggable(True)                           # drag each label with the mouse
+            st["ann"][k] = ann
             st["art"] += [ax.axvline(mv[i], color="r", lw=0.8, ls=":"),
-                          ax.plot(mv[i], yv, "ro", ms=5)[0]]
-        ax = axes[st["on"]]
-        st["ann"] = ax.annotate(
-            txt, (mv[i], (code[i], inl[i])[st["on"]]), xytext=st["off"], textcoords="offset points",
-            fontsize=8, bbox=dict(boxstyle="round", fc="w", ec="r"),
-            arrowprops=dict(arrowstyle="->", color="r"))
-        st["ann"].draggable(True)                         # drag the label with the mouse
-        st["art"].append(st["ann"])
+                          ax.plot(mv[i], yv, "ro", ms=5)[0], ann]
         fig.canvas.draw_idle()
 
     def on_click(ev):
         if ev.inaxes not in axes or ev.xdata is None or ev.button != 1:
             return
-        if st["ann"] is not None and st["ann"].contains(ev)[0]:
-            return                                        # clicking the label = drag, not select
+        if any(a_ is not None and a_.contains(ev)[0] for a_ in st["ann"]):
+            return                                        # clicking a label = drag, not select
         show(np.argmin(np.abs(mv - ev.xdata)))
 
     def on_key(ev):
         if ev.key in ("left", "right"):
             show(st["i"] + (1 if ev.key == "right" else -1))
-        elif ev.key == "t":                               # move the label to the other plot
-            st["on"] = 1 - st["on"]
-            st["ann"] = None
-            show(st["i"])
 
     fig.canvas.mpl_connect("button_press_event", on_click)
     fig.canvas.mpl_connect("key_press_event", on_key)
