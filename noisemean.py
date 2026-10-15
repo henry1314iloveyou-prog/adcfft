@@ -34,7 +34,14 @@ def main():
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
     p.add_argument("--out", default="noise_lsb", help="output basename (.png and .pdf added)")
     p.add_argument("--show", action="store_true", help="open interactive matplotlib window")
+    p.add_argument("--open", metavar="PKL", help="open a saved .fig.pkl in an interactive matplotlib window")
     a = p.parse_args()
+    if a.open:
+        import pickle
+        import matplotlib.pyplot as plt
+        pickle.load(open(a.open, "rb"))
+        plt.show()
+        return
 
     raw = np.loadtxt(a.file)
     bits = np.where(raw > a.vth, 1, -1)
@@ -62,7 +69,10 @@ def main():
     fig.tight_layout()
     fig.savefig(a.out + ".png", dpi=120)
     fig.savefig(a.out + ".pdf")           # vector: zoom as far as you like in any PDF viewer
-    print(f"saved {a.out}.png, {a.out}.pdf")
+    import pickle
+    with open(a.out + ".fig.pkl", "wb") as f:
+        pickle.dump(fig, f)               # reopen: python noisemean.py --open noise_lsb.fig.pkl
+    print(f"saved {a.out}.png, {a.out}.pdf, {a.out}.fig.pkl")
     if a.show:
         plt.show()                        # interactive window: mouse zoom / pan toolbar
 
