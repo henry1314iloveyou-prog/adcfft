@@ -102,6 +102,7 @@ def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title="", vcm=0.75):
             print(f"WARNING: only {hits:.1f} hits/code, DNL/missing codes unreliable; increase ramp time.")
         res.update(codes=codes, dnl=d, nmiss=nmiss, hits=hits)
 
+    import matplotlib
     import matplotlib.pyplot as plt
     n = 3 if dnl else 2
     mv = u_ideal * vfs * 1e3                      # input [mV]
@@ -137,6 +138,8 @@ def add_cursor(fig, axes, mv, code, inl, uv_lsb, vcm=0.75):
     input diff [mV] with vip/vin [V], output code, INL [LSB] and [uV].
     Both plots get a marker and a label (top: input/code, bottom: INL); each label can be
     dragged with the mouse."""
+    import matplotlib
+
     def default_off(k, i):
         """Label offset [points] that stays inside its plot: top plot has empty space above-left
         and below-right of the rising line; the INL label goes on the side with more room."""
@@ -177,11 +180,16 @@ def add_cursor(fig, axes, mv, code, inl, uv_lsb, vcm=0.75):
         fig.canvas.draw_idle()
 
     def on_click(ev):
-        if ev.inaxes not in axes or ev.xdata is None or ev.button != 1:
+        if ev.button != 1 or ev.x is None:
+            return
+        # Hit-test by pixel position instead of ev.inaxes: with a secondary (right-hand) axis,
+        # some matplotlib versions report the overlay as inaxes, which broke clicks on the INL plot.
+        if not any(ax.get_window_extent().contains(ev.x, ev.y) for ax in axes):
             return
         if any(a_ is not None and a_.contains(ev)[0] for a_ in st["ann"]):
             return                                        # clicking a label = drag, not select
-        show(np.argmin(np.abs(mv - ev.xdata)))
+        xdata = axes[0].transData.inverted().transform((ev.x, ev.y))[0]
+        show(np.argmin(np.abs(mv - xdata)))
 
     def on_key(ev):
         if ev.key in ("left", "right"):
@@ -190,6 +198,7 @@ def add_cursor(fig, axes, mv, code, inl, uv_lsb, vcm=0.75):
     fig.canvas.mpl_connect("button_press_event", on_click)
     fig.canvas.mpl_connect("key_press_event", on_key)
     fig._cursor_show = show            # for testing / scripting
+    print("cursor: click in either plot or press left/right arrow keys (matplotlib %s)" % matplotlib.__version__)
 
 
 def run_sim(a):
