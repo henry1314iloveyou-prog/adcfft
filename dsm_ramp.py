@@ -286,10 +286,10 @@ def main():
     a = p.parse_args()
     import matplotlib.pyplot as plt
     {"sim": run_sim, "hspice": run_hspice_files, "dc": run_dc}[a.cmd](a)
-    if a.save:
-        plt.gcf().savefig(a.save, dpi=130)
-        print(f"saved {a.save}")
-    else:
+    out = a.save or (os.path.splitext(a.csv[0])[0] + "_inl.png" if a.cmd != "sim" else "dsm_sim_inl.png")
+    plt.gcf().savefig(out, dpi=130)
+    print(f"figure saved: {os.path.abspath(out)}")
+    if not a.save:
         plt.show()
 
 
