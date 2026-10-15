@@ -21,6 +21,8 @@ except ImportError:                       # slow pure-python fallback
 
 # IDE users: set this to your data file (used when the script is run without arguments)
 DATA_FILE = "af6859ramp1ms.txt"
+DECIM_R = 128        # sinc3 decimation ratio for the hspice mode (smaller = more points, more noise)
+VFSD = 0.375         # differential full scale [V] (= Vref); only scales the gain
 NB = 16
 LSB = 2.0 ** -(NB - 1)
 
@@ -340,8 +342,8 @@ def main():
     a2.add_argument("--fs", type=float, default=12e6)
     a2.add_argument("--tsamp", type=float, default=100e-12 + 0.75 / 12e6)
     a2.add_argument("--vth", type=float, default=0.9)
-    a2.add_argument("--vfsd", type=float, default=0.375, help="diff full scale [V] = Vref = VLDOA/16*4")
-    a2.add_argument("--r", type=int, default=128)
+    a2.add_argument("--vfsd", type=float, default=VFSD, help="diff full scale [V] = Vref = VLDOA/16*4")
+    a2.add_argument("--r", type=int, default=DECIM_R)
     a2.add_argument("--vd0", type=float, default=0.0, help="1-column input: diff at t=0 [V]")
     a2.add_argument("--vd1", type=float, default=0.3, help="1-column input: diff at t=tramp [V]")
     a2.add_argument("--tramp", type=float, default=1e-3)
