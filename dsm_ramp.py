@@ -99,15 +99,18 @@ def analyze(u_ideal, y, vfs_label="FS", dnl=True, margin=50, fig_title=""):
         res.update(codes=codes, dnl=d, nmiss=nmiss, hits=hits)
 
     import matplotlib.pyplot as plt
-    n = 4 if dnl else 3
+    n = 3 if dnl else 2
     fig, ax = plt.subplots(n, 1, figsize=(8, 2.6 * n))
     ax[0].plot(u_ideal, yq, label="output")
     ax[0].plot(u_ideal, g * u_ideal + o, "--", label="best fit")
     ax[0].set(xlabel="input [FS]", ylabel="output [FS]", title=fig_title)
     ax[0].legend()
-    ax[1].plot(u_ideal, err / LSB, lw=0.6, label="raw")
-    ax[1].plot(u_ideal, errs / LSB, label="smoothed")
-    ax[1].set(xlabel="input [FS]", ylabel="INL [LSB]")
+    ax[1].plot(u_ideal, err / LSB, ".-", ms=3, lw=0.8, label="INL (vs best-fit line)")
+    if errs is not err:
+        ax[1].plot(u_ideal, errs / LSB, label="smoothed")
+    ax[1].axhline(0, color="k", lw=0.5)
+    ax[1].set(xlabel="input [FS]", ylabel="INL [LSB, 16-bit]",
+              title=f"INL: {res['inl_pk']:.1f} LSB peak, {res['inl_rms']:.1f} LSB rms")
     ax[1].legend()
     if dnl:
         ax[2].plot(res["codes"], res["dnl"])
@@ -217,10 +220,16 @@ def main():
     a2.add_argument("--vd0", type=float, default=0.0, help="1-column input: diff at t=0 [V]")
     a2.add_argument("--vd1", type=float, default=0.3, help="1-column input: diff at t=tramp [V]")
     a2.add_argument("--tramp", type=float, default=1e-3)
+    for sp in (a1, a2):
+        sp.add_argument("--save", help="save the figure to this file instead of showing it")
     a = p.parse_args()
     import matplotlib.pyplot as plt
     (run_sim if a.cmd == "sim" else run_hspice)(a)
-    plt.show()
+    if a.save:
+        plt.gcf().savefig(a.save, dpi=130)
+        print(f"saved {a.save}")
+    else:
+        plt.show()
 
 
 if __name__ == "__main__":
