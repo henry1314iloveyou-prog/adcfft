@@ -66,7 +66,7 @@ def sinc3(bits, fs, r=128, order=3):
     return y[idx], idx, order * (r - 1) / 2 / fs
 
 
-def analyze(u_ideal, y, vfs_label="FS", dnl=True, margin=50, fig_title=""):
+def analyze(u_ideal, y, vfs=0.375, dnl=True, margin=50, fig_title=""):
     """u_ideal, y in FS units at equal time instants. Prints results, returns dict."""
     code = np.clip(np.round(y / LSB), -2 ** (NB - 1), 2 ** (NB - 1) - 1)
     yq = code * LSB
@@ -104,24 +104,29 @@ def analyze(u_ideal, y, vfs_label="FS", dnl=True, margin=50, fig_title=""):
 
     import matplotlib.pyplot as plt
     n = 3 if dnl else 2
-    fig, ax = plt.subplots(n, 1, figsize=(8, 2.6 * n))
-    ax[0].plot(u_ideal, yq, label="output")
-    ax[0].plot(u_ideal, g * u_ideal + o, "--", label="best fit")
-    ax[0].set(xlabel="input [FS]", ylabel="output [FS]", title=fig_title)
+    mv = u_ideal * vfs * 1e3                      # input [mV]
+    uv_lsb = vfs * LSB * 1e6                      # 1 LSB in uV (input referred)
+    fig, ax = plt.subplots(n, 1, figsize=(8, 2.8 * n))
+    ax[0].plot(mv, code, label="output")
+    ax[0].plot(mv, (g * u_ideal + o) / LSB, "--", label="best fit")
+    ax[0].set(xlabel="input (differential) [mV]", ylabel="output code [LSB, 16-bit]", title=fig_title)
     ax[0].legend()
-    ax[1].plot(u_ideal, err / LSB, ".-", ms=3, lw=0.8, label="INL (vs best-fit line)")
+    ax[1].plot(mv, err / LSB, ".-", ms=3, lw=0.8, label="INL (vs best-fit line)")
     if errs is not err:
-        ax[1].plot(u_ideal, errs / LSB, label="smoothed")
+        ax[1].plot(mv, errs / LSB, label="smoothed")
     ax[1].axhline(0, color="k", lw=0.5)
-    ax[1].set(xlabel="input [FS]", ylabel="INL [LSB, 16-bit]",
-              title=f"INL: {res['inl_pk']:.1f} LSB peak, {res['inl_rms']:.1f} LSB rms")
+    ax[1].set(xlabel="input (differential) [mV]", ylabel="INL [LSB]",
+              title=f"INL: {res['inl_pk']:.1f} LSB peak, {res['inl_rms']:.1f} LSB rms   "
+                    f"(1 LSB = {uv_lsb:.1f} uV)")
+    sec = ax[1].secondary_yaxis("right", functions=(lambda x: x * uv_lsb, lambda x: x / uv_lsb))
+    sec.set_ylabel("INL [uV, input-referred]")
     ax[1].legend()
     if dnl:
         ax[2].plot(res["codes"], res["dnl"])
-        ax[2].set(xlabel="output code", ylabel="DNL [LSB]",
+        ax[2].set(xlabel="output code [LSB]", ylabel="DNL [LSB]",
                   title=f"DNL (code density), {res['nmiss']} missing codes")
-    for a in ax:
-        a.grid(True)
+    for a_ in ax:
+        a_.grid(True)
     fig.tight_layout()
     return res
 
@@ -136,7 +141,7 @@ def run_sim(a):
     t = np.arange(y.size) / fso - dly
     ui = np.interp(t, np.arange(n) / fs, u, left=np.nan, right=np.nan)
     ok = ~np.isnan(ui) & (t > 5e-3) & (t < a.tr - 5e-3)
-    return analyze(ui[ok], y[ok], dnl=a.tr >= 1,
+    return analyze(ui[ok], y[ok], dnl=a.tr >= 1, vfs=a.vfs,
                    fig_title=f"Behavioural 2nd-order DSM, fs={fs / 1e6:g} MHz")
 
 
@@ -211,7 +216,7 @@ def run_hspice_files(a):
     y = np.mean([r[1] for r in runs], axis=0)
     if len(runs) > 1:
         print(f"averaged {len(runs)} runs")
-    return analyze(u, y, dnl=False, fig_title=f"HSPICE ramp (sinc3), {len(runs)} run(s)")
+    return analyze(u, y, vfs=a.vfsd, dnl=False, fig_title=f"HSPICE ramp (sinc3), {len(runs)} run(s)")
 
 
 def run_dc(a):
@@ -239,7 +244,7 @@ def run_dc(a):
         ys.append(bits[sl] @ h)
     print(f"{nst} steps x {a.step} clocks ({a.skip} skipped), diff {min(vd):.4f}..{max(vd):.4f} V, "
           f"VfsD={a.vfsd} V assumed")
-    return analyze(np.array(us), np.array(ys), dnl=False, fig_title=f"DC sweep, {nst} steps")
+    return analyze(np.array(us), np.array(ys), vfs=a.vfsd, dnl=False, fig_title=f"DC sweep, {nst} steps")
 
 
 
