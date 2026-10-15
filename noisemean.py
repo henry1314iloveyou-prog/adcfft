@@ -32,7 +32,8 @@ def main():
     p.add_argument("--lsb-fs", type=float, default=32768, help="LSBs per full scale (+/-1)")
     p.add_argument("--vfsd", type=float, default=1.5, help="differential full scale [V]")
     p.add_argument("--skip", type=int, default=5, help="decimated start-up samples to drop")
-    p.add_argument("--out", default="noise_lsb.html")
+    p.add_argument("--out", default="noise_lsb", help="output basename (.png and .pdf added)")
+    p.add_argument("--show", action="store_true", help="open interactive matplotlib window")
     a = p.parse_args()
 
     raw = np.loadtxt(a.file)
@@ -49,14 +50,21 @@ def main():
     print(f"noise rms (std) = {sd:.3f} LSB = {sd / a.lsb_fs * a.vfsd * 1e6:.1f} uV (diff)")
     print(f"ENOB (noise only, full-scale sine) = {np.log2(2 * a.lsb_fs / (sd * np.sqrt(12))):.2f} bits")
 
-    import plotly.graph_objects as go
-    fig = go.Figure(go.Scatter(y=code, mode="lines+markers", marker=dict(size=3), line=dict(width=1),
-                               hovertemplate="sample %{x}<br>%{y:.0f} LSB<extra></extra>"))
-    fig.update_layout(title=f"mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})",
-                      xaxis_title="output sample", yaxis_title="output code [LSB]",
-                      yaxis_range=[-a.lsb_fs, a.lsb_fs], template="plotly_white")
-    fig.write_html(a.out, include_plotlyjs=True, config=dict(scrollZoom=True, displaylogo=False))
-    print("saved", a.out)
+    import matplotlib
+    if not a.show:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(code, lw=0.7)
+    ax.set(xlabel="output sample", ylabel="output code [LSB]",
+           ylim=(-a.lsb_fs, a.lsb_fs), title=f"mean = {z:.1f} LSB, std = {sd:.2f} LSB (FS = +/-{a.lsb_fs:g})")
+    ax.grid(True)
+    fig.tight_layout()
+    fig.savefig(a.out + ".png", dpi=120)
+    fig.savefig(a.out + ".pdf")           # vector: zoom as far as you like in any PDF viewer
+    print(f"saved {a.out}.png, {a.out}.pdf")
+    if a.show:
+        plt.show()                        # interactive window: mouse zoom / pan toolbar
 
 
 if __name__ == "__main__":
