@@ -2,6 +2,8 @@
 """Ramp test of a 1-bit delta-sigma ADC (gain / offset / INL / DNL / missing codes).
 
   python dsm_ramp.py sim    [--tr 4] [--fs 12e6]          behavioural 2nd-order DSM + ramp
+  python dsm_ramp.py hspice ramp.csv [more.csv ...]       (several runs are averaged)
+  python dsm_ramp.py dc steps.txt --step 1200 --skip 200   (stepped DC sweep)
   python dsm_ramp.py hspice ramp.csv [--vfsd 1.5]         HSPICE table: 4 columns time,v(qout),v(vip),v(vin) or 1 column v(qout) per clock
 
 Requires numpy, scipy, matplotlib (numba optional, speeds up the modulator ~100x).
@@ -153,8 +155,8 @@ def load_table(path):
     return np.array([r for r in rows if len(r) == n]), names
 
 
-def run_hspice(a):
-    d, names = load_table(a.csv)
+def run_hspice(a, path=None):
+    d, names = load_table(path or a.csv[0])
     tck = 1.0 / a.fs
     ncol = d.shape[1]
     if ncol == 4 and not names:
@@ -199,7 +201,47 @@ def run_hspice(a):
     keep = np.arange(y.size) > 4
     print(f"{bits.size} bits, R={a.r}, fout={a.fs / a.r / 1e3:.1f} kHz, VfsD={a.vfsd} V assumed "
           f"(wrong VfsD only scales gain), mean bit = {bits.mean():+.4f}. Too few points for DNL.")
-    return analyze(ui[keep], y[keep], dnl=False, fig_title="HSPICE ramp (sinc3)")
+    return ui[keep], y[keep]
+
+
+def run_hspice_files(a):
+    """One or more ramp runs (e.g. different noise seeds): decimated outputs are averaged."""
+    runs = [run_hspice(a, f) for f in a.csv]
+    u = runs[0][0]
+    y = np.mean([r[1] for r in runs], axis=0)
+    if len(runs) > 1:
+        print(f"averaged {len(runs)} runs")
+    return analyze(u, y, dnl=False, fig_title=f"HSPICE ramp (sinc3), {len(runs)} run(s)")
+
+
+def run_dc(a):
+    """Stepped-input (DC sweep) run: each step lasts --step clocks; the first --skip are
+    discarded, the rest averaged. Columns: [TIME] v(vin) v(vip) v(qout), one row per clock."""
+    d, names = load_table(a.csv[0])
+    if len(names) == d.shape[1] - 1:
+        names = ["time"] + names
+    col = {n: i for i, n in enumerate(names)}
+    q = d[:, col["v(qout)"]]
+    bits = np.where(q > a.vth, 1.0, -1.0)
+    vd = d[:, col["v(vip)"]] - d[:, col["v(vin)"]]
+    nst = bits.size // a.step
+    # sinc^3 weighting over the usable part of each step (a plain average of a 2nd-order
+    # DSM stream leaves ~1/M error, which would show up as INL)
+    L = (a.step - a.skip - 1) // 3 + 1
+    h = np.array([1.0])
+    for _ in range(3):
+        h = np.convolve(h, np.ones(L))
+    h /= h.sum()
+    us, ys = [], []
+    for k in range(nst):
+        sl = slice((k + 1) * a.step - h.size, (k + 1) * a.step)
+        us.append(vd[sl].mean() / a.vfsd)
+        ys.append(bits[sl] @ h)
+    print(f"{nst} steps x {a.step} clocks ({a.skip} skipped), diff {min(vd):.4f}..{max(vd):.4f} V, "
+          f"VfsD={a.vfsd} V assumed")
+    return analyze(np.array(us), np.array(ys), dnl=False, fig_title=f"DC sweep, {nst} steps")
+
+
 
 
 def main():
@@ -212,8 +254,14 @@ def main():
     a1.add_argument("--vcm", type=float, default=0.75)
     a1.add_argument("--vamp", type=float, default=0.15)
     a1.add_argument("--vfs", type=float, default=0.75)
-    a2 = s.add_parser("hspice")
-    a2.add_argument("csv")
+    a2 = s.add_parser("hspice", help="ramp run(s); several files are averaged")
+    a2.add_argument("csv", nargs="+")
+    a3 = s.add_parser("dc", help="stepped-input (DC sweep) run, see ramp_steps.sp")
+    a3.add_argument("csv", nargs=1)
+    a3.add_argument("--step", type=int, default=1200, help="clocks per input step")
+    a3.add_argument("--skip", type=int, default=200, help="clocks discarded at start of each step")
+    a3.add_argument("--vfsd", type=float, default=0.375)
+    a3.add_argument("--vth", type=float, default=0.9)
     a2.add_argument("--fs", type=float, default=12e6)
     a2.add_argument("--tsamp", type=float, default=100e-12 + 0.75 / 12e6)
     a2.add_argument("--vth", type=float, default=0.9)
@@ -222,11 +270,11 @@ def main():
     a2.add_argument("--vd0", type=float, default=0.0, help="1-column input: diff at t=0 [V]")
     a2.add_argument("--vd1", type=float, default=0.3, help="1-column input: diff at t=tramp [V]")
     a2.add_argument("--tramp", type=float, default=1e-3)
-    for sp in (a1, a2):
+    for sp in (a1, a2, a3):
         sp.add_argument("--save", help="save the figure to this file instead of showing it")
     import os
     import sys
-    if not {"sim", "hspice"} & set(sys.argv[1:]):
+    if not {"sim", "hspice", "dc"} & set(sys.argv[1:]):
         # No subcommand (e.g. run from an IDE, whose argv may carry extra junk): use defaults.
         try:
             here = os.path.dirname(os.path.abspath(__file__))
@@ -237,7 +285,7 @@ def main():
         sys.argv = sys.argv[:1] + (["hspice", f] if f else ["sim", "--tr", "0.5"])
     a = p.parse_args()
     import matplotlib.pyplot as plt
-    (run_sim if a.cmd == "sim" else run_hspice)(a)
+    {"sim": run_sim, "hspice": run_hspice_files, "dc": run_dc}[a.cmd](a)
     if a.save:
         plt.gcf().savefig(a.save, dpi=130)
         print(f"saved {a.save}")
